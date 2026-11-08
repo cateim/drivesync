@@ -1,0 +1,127 @@
+#pragma once
+
+#include <QByteArray>
+#include <QDateTime>
+#include <QFileSystemWatcher>
+#include <QHash>
+#include <QList>
+#include <QObject>
+#include <QStringList>
+#include <QTimer>
+#include <QVariantList>
+#include <QVariantMap>
+#include <functional>
+
+#include "snapshot.h"
+#include "synclog.h"
+
+// Where the Backend looks. Tests point every path at a temp directory and
+// systemctl at a fake script.
+struct BackendPaths {
+    QString log;       // drive-sync's rclone log
+    QString drive;     // the mirrored folder, where conflict copies land
+    QString stateDir;  // drive-sync's state folder, which holds the resync pause mark
+    QString proc;      // /proc, to check that the pid in the pause mark is drive-sync.sh
+    QString systemctl;
+    QString find;
+    QString appState;  // SyncWatch's own state folder (conflict count cache); empty writes nothing
+
+    static BackendPaths defaults();
+};
+
+class Backend : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QString status READ status NOTIFY changed)
+    Q_PROPERTY(QString tone READ tone NOTIFY changed)
+    Q_PROPERTY(QString causeKind READ causeKind NOTIFY changed)
+    Q_PROPERTY(QString causeDetail READ causeDetail NOTIFY changed)
+    Q_PROPERTY(QStringList warnings READ warnings NOTIFY changed)
+    Q_PROPERTY(QVariantMap currentRun READ currentRun NOTIFY changed)
+    Q_PROPERTY(QDateTime lastSuccess READ lastSuccess NOTIFY changed)
+    Q_PROPERTY(QDateTime nextRun READ nextRun NOTIFY changed)
+    Q_PROPERTY(int typicalSeconds READ typicalSeconds NOTIFY changed)
+    Q_PROPERTY(QVariantList runs READ runs NOTIFY runsChanged)
+    Q_PROPERTY(QVariantList conflicts READ conflicts NOTIFY conflictsChanged)
+    Q_PROPERTY(QString conflictError READ conflictError NOTIFY conflictsChanged)
+    Q_PROPERTY(QString message READ message NOTIFY messageChanged)
+    Q_PROPERTY(QString logPath READ logPath CONSTANT)
+    Q_PROPERTY(QString drivePath READ drivePath CONSTANT)
+
+public:
+    explicit Backend(const BackendPaths &paths = BackendPaths::defaults(), QObject *parent = nullptr);
+    ~Backend() override;
+
+    QString status() const { return m_summary.status; }
+    // "ok" | "busy" | "warning" | "error", the same grouping the bar shows.
+    QString tone() const { return m_snapshot.tone; }
+    QString causeKind() const { return m_summary.causeKind; }
+    QString causeDetail() const { return m_summary.causeDetail; }
+    QStringList warnings() const { return m_summary.warnings; }
+    QVariantMap currentRun() const { return m_currentRun; }
+    QDateTime lastSuccess() const { return m_lastSuccess; }
+    QDateTime nextRun() const { return m_nextRun; }
+    int typicalSeconds() const { return m_typicalSeconds; }
+    QVariantList runs() const { return m_runs; }
+    QVariantList conflicts() const { return m_conflicts; }
+    QString conflictError() const { return m_conflictError; }
+    QString message() const { return m_message; }
+    QString logPath() const { return m_paths.log; }
+    QString drivePath() const { return m_paths.drive; }
+
+    // Reads the log, asks systemd and looks for conflict copies again.
+    Q_INVOKABLE void refresh();
+    // Opens the file manager on a conflict copy, given relative to the drive.
+    Q_INVOKABLE void showInFileManager(const QString &relativePath);
+
+    static SyncSummary summarize(const SyncInputs &in);
+    // "systemctl show" output for several units: one property map per unit.
+    static QList<QHash<QString, QString>> parseShow(const QByteArray &output);
+    // The next elapse of the first timer in "systemctl list-timers -o json".
+    static QDateTime parseNextElapse(const QByteArray &json);
+    // True when the pid in drive-sync's pause mark is still drive-sync.sh.
+    static bool resyncRunning(const QString &stateDir, const QString &proc);
+    static QVariantMap runToMap(const SyncRun &run, const QString &outcome);
+
+signals:
+    void changed();
+    void runsChanged();
+    void conflictsChanged();
+    void messageChanged();
+
+private:
+    void readLog();
+    void querySystemd();
+    void scanConflicts();
+    void recompute();
+    void watchLog();
+    void setMessage(const QString &message);
+    void run(const QString &program, const QStringList &arguments,
+             std::function<void(bool ok, const QByteArray &output)> done);
+
+    BackendPaths m_paths;
+    QFileSystemWatcher m_watcher;
+    QTimer m_logDebounce;
+    QTimer m_poll;
+    QTimer m_conflictPoll;
+    QTimer m_messageTimer;
+
+    QList<SyncRun> m_parsed;
+    bool m_logFound = false;
+    bool m_systemctlWorks = true;
+    bool m_systemdPending = false;
+    bool m_scanPending = false;
+    QHash<QString, QString> m_service;
+    QHash<QString, QString> m_timer;
+    QDateTime m_lastFinishedStart;
+
+    Snapshot m_snapshot;
+    SyncSummary m_summary;
+    QVariantMap m_currentRun;
+    QVariantList m_runs;
+    QVariantList m_conflicts;
+    QString m_conflictError;
+    QDateTime m_lastSuccess;
+    QDateTime m_nextRun;
+    int m_typicalSeconds = 0;
+    QString m_message;
+};
