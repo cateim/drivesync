@@ -1,0 +1,40 @@
+# syncwatch - files that never enter the repository
+
+# ---- Dependencies and build artefacts ----
+# bin/build, bin/test and bin/install (makepkg) all write under build/, which
+# drive-sync also leaves out of the Google Drive mirror.
+/build/
+/pkgbuild/pkg/
+/pkgbuild/src/
+*.pkg.tar.*
+
+# ---- Environment ----
+.env
+.env.*
+!.env.example
+
+# ---- Logs ----
+*.log
+
+# ---- Generated and regenerable ----
+graphify-out/
+docs/
+.superpowers/
+
+# ---- Controle de trabalho ----
+# Rascunho de trabalho, nao documentacao: muda a cada sessao e cita o que
+# ainda esta quebrado.
+CHECKLIST.md
+
+# ---- OS and editors ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.user
+
+# ---- Loose attachments in the root ----
+# Screenshots and exports dropped in the root by mistake. The README pictures
+# live in assets/images/ on purpose.
+/*.png
+/*.pdf
