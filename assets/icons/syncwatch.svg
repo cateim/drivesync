@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>SyncWatch</title>
+  <desc>A cream cloud on the dark Omarchy tile, with a green check badge at its lower right: the folder is in sync.</desc>
+  <rect width="128" height="128" rx="24" fill="#101010"/>
+  <!-- The cloud is a capsule with three circles on top, all one color, so it reads as one shape. -->
+  <g fill="#f5f1e8" transform="translate(-6 -6)">
+    <rect x="22" y="62" width="84" height="32" rx="16"/>
+    <circle cx="48" cy="64" r="20"/>
+    <circle cx="72" cy="54" r="26"/>
+    <circle cx="92" cy="74" r="14"/>
+  </g>
+  <!-- The tile-colored ring cuts the badge out of the cloud, so it stays readable at launcher sizes. -->
+  <circle cx="94" cy="92" r="20" fill="#82FB9C" stroke="#101010" stroke-width="6"/>
+  <path d="M85 92l6 6 12-12" fill="none" stroke="#101010" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

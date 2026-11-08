@@ -1,0 +1,34 @@
+pkgname=syncwatch
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='See how drive-sync is keeping ~/Drive and Google Drive in step'
+arch=('x86_64' 'aarch64')
+license=('MIT')
+depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'systemd' 'findutils')
+makedepends=('gcc' 'make')
+# A local app has no use for the split -debug package makepkg.conf asks for.
+options=('!debug')
+source=()
+sha256sums=()
+
+build() {
+  cd "$startdir/.."
+  ./bin/build
+}
+
+package() {
+  cd "$startdir/.."
+  install -Dm755 build/syncwatch "$pkgdir/usr/bin/syncwatch"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 assets/icons/syncwatch.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/syncwatch.svg"
+  install -Dm644 "$startdir/syncwatch.desktop" "$pkgdir/usr/share/applications/syncwatch.desktop"
+
+  # The bar widget. Omarchy loads third-party plugins only from
+  # ~/.config/omarchy/plugins, which a package cannot write, so it lands here
+  # and the app links it into the user's folder on first start.
+  local widget="$pkgdir/usr/share/syncwatch/omarchy-plugin"
+  install -Dm644 plugin/manifest.json plugin/DriveSync.qml plugin/DriveSyncService.qml \
+    plugin/DriveSyncModel.js -t "$widget"
+  install -Dm755 plugin/open-history.sh -t "$widget"
+  install -Dm644 plugin/i18n/en.json plugin/i18n/pt-BR.json -t "$widget/i18n"
+}

@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+"$ROOT/bin/build"
+cd "$ROOT/pkgbuild"
+
+# The project lives under ~/Drive, which drive-sync mirrors to Google Drive.
+# makepkg's work tree and the finished package go under build/, which the
+# mirror leaves out, instead of pkgbuild/src, pkgbuild/pkg and pkgbuild/.
+mkdir -p "$ROOT/build/makepkg"
+export BUILDDIR="$ROOT/build/makepkg"
+export PKGDEST="$ROOT/build/makepkg"
+exec makepkg -fsi "$@"
