@@ -1,0 +1,11 @@
+{
+  "%n min ago": { "one": "%n min ago", "other": "%n min ago" },
+  "%n h ago": { "one": "%n h ago", "other": "%n h ago" },
+  "%n days ago": { "one": "%n day ago", "other": "%n days ago" },
+  "%n conflict copies to sort out": { "one": "%n conflict copy to sort out", "other": "%n conflict copies to sort out" },
+  "%n conflict copies": { "one": "%n conflict copy", "other": "%n conflict copies" },
+  "Next run in %n min.": { "one": "Next run in %n min.", "other": "Next run in %n min." },
+  "%Ln files listed.": { "one": "%Ln file listed.", "other": "%Ln files listed." },
+  "%Ln changes": { "one": "%Ln change", "other": "%Ln changes" },
+  "And %Ln more.": { "one": "And %Ln more.", "other": "And %Ln more." }
+}

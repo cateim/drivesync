@@ -1,0 +1,14 @@
+<RCC>
+    <qresource prefix="/">
+        <file alias="Main.qml">Main.qml</file>
+        <file alias="StatusPanel.qml">StatusPanel.qml</file>
+        <file alias="RunsPage.qml">RunsPage.qml</file>
+        <file alias="RunDetail.qml">RunDetail.qml</file>
+        <file alias="ConflictsPage.qml">ConflictsPage.qml</file>
+        <file alias="HelpOverlay.qml">HelpOverlay.qml</file>
+        <file alias="BarBanner.qml">BarBanner.qml</file>
+        <file alias="format.js">format.js</file>
+        <file alias="i18n/en.json">i18n/en.json</file>
+        <file alias="i18n/pt-BR.json">i18n/pt-BR.json</file>
+    </qresource>
+</RCC>
