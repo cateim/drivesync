@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "syncwatch",
+  "name": "SyncWatch",
+  "version": "1.0.0",
+  "author": "SyncWatch",
+  "description": "State of drive-sync, the rclone bisync of a folder with Google Drive, as SyncWatch decides it.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "DriveSync.qml"
+  },
+  "barWidget": {
+    "displayName": "SyncWatch",
+    "description": "Last successful sync, current failure, next run, and a manual run of drive-sync.",
+    "category": "Files",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 30
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 10,
+        "max": 600,
+        "step": 5,
+        "defaultValue": 30
+      }
+    ]
+  }
+}
