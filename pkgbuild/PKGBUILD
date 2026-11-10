@@ -4,7 +4,7 @@ pkgrel=1
 pkgdesc='See how drive-sync is keeping ~/Drive and Google Drive in step'
 arch=('x86_64' 'aarch64')
 license=('MIT')
-depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'systemd' 'findutils')
+depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'systemd' 'findutils' 'rclone' 'libnotify')
 makedepends=('gcc' 'make')
 # A local app has no use for the split -debug package makepkg.conf asks for.
 options=('!debug')
@@ -22,6 +22,12 @@ package() {
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 assets/icons/syncwatch.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/syncwatch.svg"
   install -Dm644 "$startdir/syncwatch.desktop" "$pkgdir/usr/share/applications/syncwatch.desktop"
+
+  # User units, inert until a takeover enables them: a unit of the same name
+  # in ~/.config/systemd/user wins over these.
+  install -Dm644 pkgbuild/units/drive-sync.service pkgbuild/units/drive-sync.timer \
+    pkgbuild/units/drive-sync-watchdog.service pkgbuild/units/drive-sync-watchdog.timer \
+    -t "$pkgdir/usr/lib/systemd/user"
 
   # The bar widget. Omarchy loads third-party plugins only from
   # ~/.config/omarchy/plugins, which a package cannot write, so it lands here
