@@ -1,7 +1,9 @@
 #include "backend.h"
 
 #include "conflictcache.h"
+#include "syncconfig.h"
 
+#include <QCoreApplication>
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCallWatcher>
@@ -35,13 +37,21 @@ int total(const SyncCounts &counts) { return counts.added + counts.modified + co
 
 BackendPaths BackendPaths::defaults() {
     const QString home = QDir::homePath();
-    return {home + "/.local/state/drive-sync.log",
-            home + "/Drive",
-            home + "/.local/state/drive-sync",
-            "/proc",
-            QStandardPaths::findExecutable("systemctl"),
-            QStandardPaths::findExecutable("find"),
-            home + "/.local/state/syncwatch"};
+    BackendPaths paths{home + "/.local/state/drive-sync.log",
+                       home + "/Drive",
+                       home + "/.local/state/drive-sync",
+                       "/proc",
+                       QStandardPaths::findExecutable("systemctl"),
+                       QStandardPaths::findExecutable("find"),
+                       home + "/.local/state/syncwatch"};
+    paths.config = defaultSyncConfigPath();
+    paths.self = QCoreApplication::applicationFilePath();
+    if (const auto config = loadSyncConfig(paths.config, nullptr)) {
+        paths.log = config->logFile;
+        paths.drive = config->localPath;
+        paths.managed = true;
+    }
+    return paths;
 }
 
 Backend::Backend(const BackendPaths &paths, QObject *parent) : QObject(parent), m_paths(paths) {
@@ -260,6 +270,9 @@ void Backend::recompute() {
     src.resyncRunning = resyncRunning(m_paths.stateDir, m_paths.proc);
     src.driveFound = m_conflictError != "noDrive";
     src.conflicts = int(m_conflicts.size());
+    src.managed = m_paths.managed;
+    if (!m_paths.appState.isEmpty())
+        src.pause = readPause(pauseFilePath(m_paths.appState));
     // UTC: comparing local times makes Qt look the zone up every time (see
     // toTime in synclog.cpp), and the parsed times carry a fixed offset.
     src.now = QDateTime::currentDateTimeUtc();
@@ -282,7 +295,7 @@ void Backend::recompute() {
 }
 
 // The headline, most urgent first. Statuses: "unavailable", "notLoaded",
-// "running", "resync", "noLog", "failed", "interrupted", "skipped",
+// "running", "resync", "paused", "noLog", "failed", "interrupted", "skipped",
 // "timerOff", "stale", "noDrive", "conflicts", "ok". Warnings carry what the
 // headline leaves out: "timerOff", "timerDisabled", "conflicts".
 SyncSummary Backend::summarize(const SyncInputs &in) {
@@ -305,6 +318,9 @@ SyncSummary Backend::summarize(const SyncInputs &in) {
         s.status = in.resyncRunning ? "resync" : "running";
     } else if (in.resyncRunning) {
         s.status = "resync";
+    } else if (in.paused) {
+        // Deliberate: no failure, "skipped" or "late" while the user holds the runs.
+        s.status = "paused";
     } else if (!in.logFound) {
         s.status = "noLog";
     } else if (systemdFailed) {
@@ -391,6 +407,39 @@ bool Backend::resyncRunning(const QString &stateDir, const QString &proc) {
     // left off, not that a resync is going.
     QFile cmdline(proc + "/" + pid + "/cmdline");
     return cmdline.open(QIODevice::ReadOnly) && cmdline.readAll().contains("drive-sync.sh");
+}
+
+void Backend::reloadConfig() {
+    if (m_paths.config.isEmpty())
+        return;
+    const auto config = loadSyncConfig(m_paths.config, nullptr);
+    const QString log = config ? config->logFile : m_paths.log;
+    m_paths.managed = config.has_value();
+    if (config)
+        m_paths.drive = config->localPath;
+    if (log != m_paths.log) {
+        m_paths.log = log;
+        watchLog();
+        readLog();
+    }
+    refresh();
+}
+
+void Backend::syncNow() { control({"sync"}); }
+void Backend::pauseFor(int minutes) { control({"pause", "--minutes", QString::number(minutes)}); }
+void Backend::pauseUntilTomorrow() { control({"pause", "--until-tomorrow"}); }
+void Backend::pauseUntilResumed() { control({"pause"}); }
+void Backend::resume() { control({"resume"}); }
+
+void Backend::control(const QStringList &arguments) {
+    run(m_paths.self, arguments + QStringList{"--json"}, [this](bool, const QByteArray &output) {
+        const QJsonObject answer = QJsonDocument::fromJson(output).object();
+        if (!answer.value("ok").toBool()) {
+            const QString error = answer.value("error").toString();
+            setMessage(error.isEmpty() ? tr("SyncWatch could not do that.") : error);
+        }
+        refresh();
+    });
 }
 
 void Backend::setMessage(const QString &message) {

@@ -25,6 +25,11 @@ struct BackendPaths {
     QString systemctl;
     QString find;
     QString appState;  // SyncWatch's own state folder (conflict count cache); empty writes nothing
+    QString config;    // SyncWatch's config; empty when there is none
+    QString self;      // this program, for the commands the window runs
+    bool managed = false;  // SyncWatch runs drive-sync through its own units
+
+    // Today's paths, or the config's log and folder once SyncWatch owns drive-sync.
 
     static BackendPaths defaults();
 };
@@ -40,6 +45,10 @@ class Backend : public QObject {
     Q_PROPERTY(QDateTime lastSuccess READ lastSuccess NOTIFY changed)
     Q_PROPERTY(QDateTime nextRun READ nextRun NOTIFY changed)
     Q_PROPERTY(int typicalSeconds READ typicalSeconds NOTIFY changed)
+    Q_PROPERTY(bool managed READ managed NOTIFY changed)
+    Q_PROPERTY(bool paused READ paused NOTIFY changed)
+    Q_PROPERTY(QDateTime pausedUntil READ pausedUntil NOTIFY changed)
+    Q_PROPERTY(bool canSyncNow READ canSyncNow NOTIFY changed)
     Q_PROPERTY(QVariantList runs READ runs NOTIFY runsChanged)
     Q_PROPERTY(QVariantList conflicts READ conflicts NOTIFY conflictsChanged)
     Q_PROPERTY(QString conflictError READ conflictError NOTIFY conflictsChanged)
@@ -61,6 +70,10 @@ public:
     QDateTime lastSuccess() const { return m_lastSuccess; }
     QDateTime nextRun() const { return m_nextRun; }
     int typicalSeconds() const { return m_typicalSeconds; }
+    bool managed() const { return m_snapshot.managed; }
+    bool paused() const { return m_snapshot.paused; }
+    QDateTime pausedUntil() const { return m_snapshot.pausedUntil; }
+    bool canSyncNow() const { return m_snapshot.canSyncNow; }
     QVariantList runs() const { return m_runs; }
     QVariantList conflicts() const { return m_conflicts; }
     QString conflictError() const { return m_conflictError; }
@@ -72,6 +85,16 @@ public:
     Q_INVOKABLE void refresh();
     // Opens the file manager on a conflict copy, given relative to the drive.
     Q_INVOKABLE void showInFileManager(const QString &relativePath);
+    // The same commands the bar and the terminal use; a refusal or a failure
+    // shows as the message.
+    Q_INVOKABLE void syncNow();
+    Q_INVOKABLE void pauseFor(int minutes);
+    Q_INVOKABLE void pauseUntilTomorrow();
+    Q_INVOKABLE void pauseUntilResumed();
+    Q_INVOKABLE void resume();
+    // Reads the config again after a takeover or an undo, so the window
+    // follows the log and the controls it now owns without a restart.
+    Q_INVOKABLE void reloadConfig();
 
     static SyncSummary summarize(const SyncInputs &in);
     // "systemctl show" output for several units: one property map per unit.
@@ -95,6 +118,7 @@ private:
     void recompute();
     void watchLog();
     void setMessage(const QString &message);
+    void control(const QStringList &arguments);
     void run(const QString &program, const QStringList &arguments,
              std::function<void(bool ok, const QByteArray &output)> done);
 

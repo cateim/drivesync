@@ -32,6 +32,10 @@ ApplicationWindow {
         target: backend
         function onChanged() { win.now = Date.now() }
     }
+    Connections {
+        target: takeoverSetup
+        function onChanged() { backend.reloadConfig() }
+    }
 
     function move(step) {
         if (win.page === 0)
@@ -58,16 +62,52 @@ ApplicationWindow {
         enabled: pluginSetup.state === "offer" || pluginSetup.state === "replaceOffer"
         onActivated: pluginSetup.decline()
     }
-    Shortcut { sequences: ["Tab", "Backtab"]; context: Qt.ApplicationShortcut; onActivated: win.page = 1 - win.page }
-    Shortcut { sequence: "1"; context: Qt.ApplicationShortcut; onActivated: win.page = 0 }
-    Shortcut { sequence: "2"; context: Qt.ApplicationShortcut; onActivated: win.page = 1 }
+    // While a dialog is open its own keys win: two enabled shortcuts on the
+    // same key cancel each other out.
+    readonly property bool dialogOpen: pauseMenu.visible || takeoverDialog.visible
+    Shortcut { sequences: ["Tab", "Backtab"]; context: Qt.ApplicationShortcut; enabled: !win.dialogOpen; onActivated: win.page = 1 - win.page }
+    Shortcut { sequence: "1"; context: Qt.ApplicationShortcut; enabled: !win.dialogOpen; onActivated: win.page = 0 }
+    Shortcut { sequence: "2"; context: Qt.ApplicationShortcut; enabled: !win.dialogOpen; onActivated: win.page = 1 }
+    Shortcut { sequence: "1"; context: Qt.ApplicationShortcut; enabled: pauseMenu.visible; onActivated: pauseMenu.choose(1) }
+    Shortcut { sequence: "2"; context: Qt.ApplicationShortcut; enabled: pauseMenu.visible; onActivated: pauseMenu.choose(2) }
+    Shortcut { sequence: "3"; context: Qt.ApplicationShortcut; enabled: pauseMenu.visible; onActivated: pauseMenu.choose(3) }
+    Shortcut {
+        sequence: "S"
+        context: Qt.ApplicationShortcut
+        enabled: !win.dialogOpen && backend.canSyncNow
+        onActivated: backend.syncNow()
+    }
+    Shortcut {
+        sequence: "P"
+        context: Qt.ApplicationShortcut
+        enabled: !win.dialogOpen && backend.managed && !backend.paused
+        onActivated: pauseMenu.open()
+    }
+    Shortcut {
+        sequence: "U"
+        context: Qt.ApplicationShortcut
+        enabled: !win.dialogOpen && backend.paused
+        onActivated: backend.resume()
+    }
+    Shortcut {
+        sequence: "T"
+        context: Qt.ApplicationShortcut
+        enabled: !win.dialogOpen && takeoverSetup.state === "offer"
+        onActivated: takeoverDialog.open()
+    }
     Shortcut { sequences: ["Down", "J"]; context: Qt.ApplicationShortcut; onActivated: win.move(1) }
     Shortcut { sequences: ["Up", "K"]; context: Qt.ApplicationShortcut; onActivated: win.move(-1) }
     Shortcut {
         sequences: ["Return", "Enter"]
         context: Qt.ApplicationShortcut
-        enabled: win.page === 1
+        enabled: win.page === 1 && !win.dialogOpen
         onActivated: conflictsPage.openCurrent()
+    }
+    Shortcut {
+        sequences: ["Return", "Enter"]
+        context: Qt.ApplicationShortcut
+        enabled: takeoverDialog.visible
+        onActivated: takeoverDialog.confirm()
     }
 
     // Right-to-left languages mirror the window; the Translator sets the
@@ -85,6 +125,17 @@ ApplicationWindow {
             StatusPanel {
                 Layout.fillWidth: true
                 now: win.now
+            }
+
+            ControlsRow {
+                Layout.fillWidth: true
+                Layout.topMargin: -6
+                onPauseRequested: pauseMenu.open()
+            }
+
+            TakeoverBanner {
+                Layout.fillWidth: true
+                onConfirmRequested: takeoverDialog.open()
             }
 
             BarBanner {
@@ -147,5 +198,8 @@ ApplicationWindow {
             visible: win.helpVisible
             onCloseRequested: win.helpVisible = false
         }
+
+        PauseMenu { id: pauseMenu }
+        TakeoverDialog { id: takeoverDialog }
     }
 }

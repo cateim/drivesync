@@ -22,6 +22,7 @@ Rectangle {
     // Material Design Icons from the Nerd Font, the same glyphs the bar uses.
     readonly property string glyph: String.fromCodePoint(backend.tone === "ok" ? 0xF0160      // cloud-check
                                                        : backend.tone === "busy" ? 0xF063F    // cloud-sync
+                                                       : status === "paused" ? 0xF18F6        // weather-cloudy-clock
                                                        : status === "timerOff" ? 0xF0164      // cloud-off-outline
                                                        : 0xF09E0)                             // cloud-alert
 
@@ -45,6 +46,7 @@ Rectangle {
         case "ok": return qsTr("In sync")
         case "running": return qsTr("Syncing now")
         case "resync": return qsTr("Resync in progress")
+        case "paused": return qsTr("Paused")
         case "failed": return qsTr("Sync failed")
         case "interrupted": return qsTr("The last run was cut off")
         case "skipped": return qsTr("Runs are being skipped")
@@ -71,8 +73,13 @@ Rectangle {
 
     function causeText(kind, detail) {
         switch (kind) {
-        case "lostListings": return qsTr("bisync lost its listings, the base of both sides. To recover: drive-sync.sh resync")
-        case "outOfSync": return qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: drive-sync.sh resync")
+        // Until SyncWatch can resync (step 3), a managed setup goes back to the old scripts for it.
+        case "lostListings": return backend.managed
+            ? qsTr("bisync lost its listings, the base of both sides. To recover: syncwatch takeover --undo, then drive-sync.sh resync")
+            : qsTr("bisync lost its listings, the base of both sides. To recover: drive-sync.sh resync")
+        case "outOfSync": return backend.managed
+            ? qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: syncwatch takeover --undo, then drive-sync.sh resync")
+            : qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: drive-sync.sh resync")
         case "timeout": return qsTr("The run went past its time limit (TimeoutStartSec) and systemd stopped it.")
         case "systemd": return qsTr("systemd says the last run failed (%1), and the log has nothing about it.").arg(detail)
         case "error": return detail
@@ -110,6 +117,15 @@ Rectangle {
         return line
     }
 
+    function pauseLine() {
+        const until = backend.pausedUntil
+        if (!Format.valid(until))
+            return qsTr("Until you resume (U).")
+        if (until.getTime() <= now)
+            return qsTr("Resumes on the next run.")
+        return qsTr("Until %1 (U resumes now).").arg(Format.when(until, now))
+    }
+
     function lastRunLine() {
         const run = backend.runs.length ? backend.runs[0] : null
         if (!run)
@@ -129,6 +145,9 @@ Rectangle {
             break
         case "running":
             lines.push(progressLine())
+            break
+        case "paused":
+            lines.push(pauseLine(), lastSyncLine())
             break
         case "resync":
             lines.push(qsTr("drive-sync.sh resync stopped the timer on purpose; it comes back on when the resync ends."),
