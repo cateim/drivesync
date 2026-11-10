@@ -1,18 +1,34 @@
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
+#include <QMap>
+#include <QProcess>
+#include <QRegularExpression>
+#include <QScopeGuard>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTimeZone>
 #include <QtTest>
+#include <algorithm>
+#include <functional>
 
 #include "backend.h"
 #include "conflictcache.h"
+#include "controlcommands.h"
+#include "notifier.h"
+#include "pausestate.h"
 #include "pluginsetup.h"
 #include "snapshot.h"
 #include "statuscommand.h"
+#include "syncconfig.h"
 #include "synclog.h"
+#include "takeover.h"
+#include "takeoversetup.h"
 #include "theme.h"
 #include "translator.h"
 
@@ -133,6 +149,215 @@ SnapshotSources idleSources(const QString &log, const QDateTime &now) {
     src.timer = {{"ActiveState", "active"}, {"UnitFileState", "enabled"}};
     src.now = now;
     return src;
+}
+
+// The ExecStart of the unit drive-sync.sh writes, with the home made up.
+constexpr char kOldExecStart[] =
+    "/usr/bin/rclone bisync gdrive: /home/someone/Drive --workdir /home/someone/.local/state/rclone/bisync "
+    "--filters-file /home/someone/.config/rclone/gdrive-filtros.txt --drive-skip-gdocs --drive-skip-shortcuts "
+    "--resilient --recover --max-lock 2m --max-delete 5 --conflict-resolve newer "
+    "--log-file /home/someone/.local/state/drive-sync.log --log-level INFO";
+
+// What a takeover of that unit writes.
+SyncConfig oldUnitConfig() {
+    SyncConfig config;
+    config.remote = "gdrive:";
+    config.localPath = "/home/someone/Drive";
+    config.workDir = "/home/someone/.local/state/rclone/bisync";
+    config.filtersFile = "/home/someone/.config/syncwatch/filters.txt";
+    config.logFile = "/home/someone/.local/state/drive-sync.log";
+    config.rcloneFlags = {"--drive-skip-gdocs", "--drive-skip-shortcuts", "--resilient", "--recover",
+                          "--max-lock", "2m", "--max-delete", "5", "--conflict-resolve", "newer",
+                          "--log-level", "INFO"};
+    config.runOnlyWhen = "findmnt -no SOURCE /home | grep -q '^/dev/mapper/someone'";
+    return config;
+}
+
+// A systemctl that appends every call to calls.log and exits with exitCode,
+// printing "denied" on stderr when it fails.
+QString recordingSystemctl(const QString &dir, int exitCode = 0) {
+    const QString path = dir + "/systemctl";
+    write(path, QString("#!/bin/sh\necho \"systemctl $*\" >> '%1/calls.log'\n"
+                        "[ %2 -eq 0 ] || echo denied >&2\nexit %2\n").arg(dir).arg(exitCode).toUtf8());
+    QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    return path;
+}
+
+// Paths for the control commands, everything inside dir.
+BackendPaths controlPaths(const QString &dir, bool managed, int systemctlExit = 0) {
+    BackendPaths paths{dir + "/drive-sync.log", dir + "/Drive", dir + "/state", dir + "/proc",
+                       recordingSystemctl(dir, systemctlExit), QString(), dir + "/app"};
+    paths.managed = managed;
+    return paths;
+}
+
+// notify-send, gdbus and omarchy that append each call to calls.log. The
+// notify-send prints the next id from ids.txt, or nothing when it is "none"
+// (no graphical session).
+NotifierPaths fakeNotifier(const QString &dir) {
+    write(dir + "/ids.txt", "41\n");
+    const QString notify = QString(
+        "#!/bin/sh\n"
+        "echo \"notify-send $*\" >> '%1/calls.log'\n"
+        "id=$(cat '%1/ids.txt')\n"
+        "[ \"$id\" = none ] && exit 0\n"
+        "echo $((id + 1)) > '%1/ids.txt'\n"
+        "echo $id\n").arg(dir);
+    write(dir + "/notify-send", notify.toUtf8());
+    write(dir + "/gdbus", QString("#!/bin/sh\necho \"gdbus $*\" >> '%1/calls.log'\n").arg(dir).toUtf8());
+    write(dir + "/omarchy", QString("#!/bin/sh\necho \"omarchy $*\" >> '%1/calls.log'\n").arg(dir).toUtf8());
+    for (const QString &name : {QString("notify-send"), QString("gdbus"), QString("omarchy")})
+        QFile::setPermissions(dir + "/" + name, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    return {dir + "/notify-send", dir + "/gdbus", dir + "/omarchy", QLocale::c()};
+}
+
+// A systemctl for the watchdog: LoadState, is-active and is-enabled answers.
+QString watchdogSystemctl(const QString &dir, const QString &load, const QString &active, const QString &enabled) {
+    const QString path = dir + "/systemctl";
+    write(path, QString("#!/bin/sh\n"
+                        "case \"$*\" in\n"
+                        "  *LoadState*) echo %1 ;;\n"
+                        "  *is-active*) echo %2; [ %2 = active ] ;;\n"
+                        "  *is-enabled*) echo %3; [ %3 = enabled ] ;;\n"
+                        "esac\n").arg(load, active, enabled).toUtf8());
+    QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    return path;
+}
+
+QStringList notifications(const QString &dir) {
+    QStringList sent;
+    for (const QString &call : calls(dir))
+        if (call.startsWith("notify-send"))
+            sent << call;
+    return sent;
+}
+
+// A drive-sync set up the way drive-sync.sh does it, inside root/home, with
+// a systemctl and an rclone that record their calls in root/calls.log.
+struct OldSetup {
+    QString home;
+    TakeoverPaths paths;
+    QString filters;
+};
+
+QString oldServiceText(const QString &home) {
+    return QString("[Unit]\nDescription=rclone bisync de ~/Drive com o Google Drive\n\n[Service]\nType=oneshot\n"
+                   "# Rodada travada vira falha.\nTimeoutStartSec=2h\n"
+                   "ExecCondition=/usr/bin/sh -c \"findmnt -no SOURCE /home | grep -q '^/dev/mapper/someone'\"\n"
+                   "ExecStart=/usr/bin/rclone bisync gdrive: %1/Drive --workdir %1/.local/state/rclone/bisync "
+                   "--filters-file %1/.config/rclone/gdrive-filtros.txt --drive-skip-gdocs --drive-skip-shortcuts "
+                   "--resilient --recover --max-lock 2m --max-delete 5 --conflict-resolve newer "
+                   "--log-file %1/.local/state/drive-sync.log --log-level INFO\n"
+                   "ExecStopPost=-%1/.local/bin/drive-sync-aviso\nNice=10\nIOSchedulingClass=idle\n").arg(home);
+}
+
+OldSetup makeOldSetup(const QString &root) {
+    OldSetup o;
+    o.home = root + "/home";
+    QDir d;
+    for (const char *folder : {"/.config/systemd/user", "/.local/bin", "/.config/rclone",
+                               "/.local/state/rclone/bisync", "/.local/state/drive-sync", "/Drive"})
+        d.mkpath(o.home + folder);
+    const QString units = o.home + "/.config/systemd/user/";
+    write(units + "drive-sync.service", oldServiceText(o.home).toUtf8());
+    write(units + "drive-sync.timer", "[Unit]\nDescription=a cada 15 min\n\n[Timer]\nOnBootSec=5min\n"
+                                      "OnUnitActiveSec=15min\n\n[Install]\nWantedBy=timers.target\n");
+    write(units + "drive-sync-vigia.service", "[Service]\nType=oneshot\nExecStart=/x/drive-sync-aviso --vigia\n");
+    write(units + "drive-sync-vigia.timer", "[Timer]\nOnStartupSec=10min\nOnUnitActiveSec=1h\n");
+    write(o.home + "/.local/bin/drive-sync.sh", "#!/usr/bin/env bash\necho old\n");
+    write(o.home + "/.local/bin/drive-sync-aviso", "#!/usr/bin/env bash\necho old\n");
+    o.filters = o.home + "/.config/rclone/gdrive-filtros.txt";
+    const QByteArray text = "# Gerado pelo drive-sync.sh.\n- .git/**\n";
+    write(o.filters, text);
+    write(o.filters + ".md5", QCryptographicHash::hash(text, QCryptographicHash::Md5).toHex());
+    write(o.home + "/.local/state/rclone/bisync/gdrive_..home_Drive.path1.lst", "# bisync listing v1\n");
+    write(o.home + "/.local/state/rclone/bisync/gdrive_..home_Drive.path2.lst", "# bisync listing v1\n");
+    write(o.home + "/.local/state/drive-sync/aviso", "0 0 0\n");
+    write(o.home + "/.local/state/drive-sync.log", "");
+
+    const QString rclone = root + "/rclone";
+    write(rclone, QString("#!/bin/sh\necho \"rclone $*\" >> '%1/calls.log'\n"
+                          "[ \"$1\" = listremotes ] && echo gdrive:\nexit 0\n").arg(root).toUtf8());
+    QFile::setPermissions(rclone, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    o.paths = {o.home + "/.config/systemd/user", o.home + "/.local/bin", o.home + "/.local/state/drive-sync",
+               o.home + "/.config/syncwatch", o.home + "/.local/share/syncwatch/taken-over",
+               recordingSystemctl(root), rclone};
+    o.paths.appState = o.home + "/.local/state/syncwatch";
+    o.paths.systemUserUnits = root + "/etc-systemd-user";
+    return o;
+}
+
+// The state a takeover wants: last run a success, nothing running.
+Snapshot settledSnapshot() {
+    Snapshot s;
+    s.summary.status = "ok";
+    s.lastRunOutcome = "success";
+    return s;
+}
+
+// A systemctl for a takeover: it records every call, fails the failAt-th call
+// (0 never fails), says the service is in serviceState and that the active
+// drive-sync.service comes from fragmentDir.
+QString takeoverSystemctl(const QString &root, int failAt, const QString &serviceState = "inactive",
+                          const QString &fragmentDir = "/usr/lib/systemd/user", const QString &onShow = ":") {
+    const QString path = root + "/systemctl";
+    write(path, QString("#!/bin/sh\n"
+                        "echo \"systemctl $*\" >> '%1/calls.log'\n"
+                        "n=$(grep -c '^systemctl' '%1/calls.log')\n"
+                        "[ \"$n\" -eq %2 ] && { echo refused >&2; exit 1; }\n"
+                        "case \"$*\" in\n"
+                        "  *is-active\\ drive-sync.service*) echo %3; [ %3 = active ] ;;\n"
+                        "  *is-active*) echo active ;;\n"
+                        "  *is-enabled*) echo enabled ;;\n"
+                        "  *FragmentPath*) %5; printf 'FragmentPath=%4/drive-sync.service\\nDropInPaths=\\n\\n"
+                        "FragmentPath=%4/drive-sync.timer\\nDropInPaths=\\n' ;;\n"
+                        "esac\n").arg(root).arg(failAt).arg(serviceState, fragmentDir, onShow).toUtf8());
+    QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    return path;
+}
+
+// Every file under root with its contents, so two moments can be compared.
+QMap<QString, QByteArray> filesUnder(const QString &root, const QStringList &skip = {}) {
+    QMap<QString, QByteArray> files;
+    QDirIterator it(root, QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString path = it.next();
+        const QString relative = QDir(root).relativeFilePath(path);
+        if (std::any_of(skip.cbegin(), skip.cend(), [&](const QString &s) { return relative.startsWith(s); }))
+            continue;
+        QFile file(path);
+        file.open(QIODevice::ReadOnly);
+        files.insert(relative, file.readAll());
+    }
+    return files;
+}
+
+// Only the systemctl calls in calls.log (detection also asks rclone).
+QStringList systemctlCalls(const QString &dir) {
+    QStringList found;
+    for (const QString &call : calls(dir))
+        if (call.startsWith("systemctl"))
+            found << call;
+    return found;
+}
+
+// A syncwatch that appends its arguments to calls.log and answers with
+// answer.json for "takeover", or fails "sync" when told to.
+QString fakeSyncwatch(const QString &dir, const QByteArray &takeoverAnswer, bool syncFails = false) {
+    write(dir + "/answer.json", takeoverAnswer);
+    const QString path = dir + "/syncwatch";
+    write(path, QString("#!/bin/sh\n"
+                        "echo \"syncwatch $*\" >> '%1/calls.log'\n"
+                        "case \"$1\" in\n"
+                        "  takeover) cat '%1/answer.json' ;;\n"
+                        "  sync) %2 ;;\n"
+                        "  *) echo '{\"ok\":true,\"error\":\"\"}' ;;\n"
+                        "esac\n")
+                    .arg(dir, syncFails ? "echo '{\"ok\":false,\"error\":\"denied\"}'; exit 1"
+                                        : "echo '{\"ok\":true,\"error\":\"\"}'")
+                    .toUtf8());
+    QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    return path;
 }
 
 }  // namespace
@@ -614,7 +839,7 @@ private slots:
         s.conflicts = 2;
         const QDateTime now(QDate(2026, 11, 7), QTime(16, 0, 0), QTimeZone::UTC);
         const QJsonObject json = snapshotToJson(s, QDateTime(), now);
-        QCOMPARE(json.value("version").toInt(), 1);
+        QCOMPARE(json.value("version").toInt(), 2);
         QCOMPARE(json.value("now").toInteger(), 1794067200);
         QCOMPARE(json.value("status").toString(), QString("failed"));
         QCOMPARE(json.value("tone").toString(), QString("error"));
@@ -626,7 +851,18 @@ private slots:
         QVERIFY(json.value("lastRun").toObject().value("outcome").isString());
         QCOMPARE(json.value("lastRun").toObject().value("start").toInteger(), 0);
         QVERIFY(json.value("currentRun").toObject().value("phase").isString());
-        QCOMPARE(json.keys().size(), 17);
+        QCOMPARE(json.value("managed").toBool(), false);
+        QCOMPARE(json.value("paused").toBool(), false);
+        QCOMPARE(json.value("pausedUntil").toInteger(), 0);
+        QCOMPARE(json.keys().size(), 20);
+
+        s.managed = true;
+        s.paused = true;
+        s.pausedUntil = QDateTime(QDate(2026, 11, 7), QTime(17, 0, 0), QTimeZone::UTC);
+        const QJsonObject paused = snapshotToJson(s, QDateTime(), now);
+        QCOMPARE(paused.value("managed").toBool(), true);
+        QCOMPARE(paused.value("paused").toBool(), true);
+        QCOMPARE(paused.value("pausedUntil").toInteger(), 1794070800);
     }
 
     void conflictCacheRoundTrip()
@@ -670,19 +906,32 @@ private slots:
         const QDateTime start = QDateTime::currentDateTime().addSecs(-600);
         QDir(dir.path()).mkpath("Drive");
         QVERIFY(write(dir.filePath("drive-sync.log"), successfulRun(start, 480).toUtf8()));
-        const BackendPaths paths{dir.filePath("drive-sync.log"), dir.filePath("Drive"), dir.filePath("state"),
-                                 dir.filePath("proc"), fakeSystemctl(dir.path(), start),
-                                 QStandardPaths::findExecutable("find"), dir.filePath("app")};
+        BackendPaths paths{dir.filePath("drive-sync.log"), dir.filePath("Drive"), dir.filePath("state"),
+                           dir.filePath("proc"), fakeSystemctl(dir.path(), start),
+                           QStandardPaths::findExecutable("find"), dir.filePath("app")};
+        paths.managed = true;
         QString out, err;
         QTextStream o(&out), e(&err);
         QCOMPARE(runStatusCommand({"--json"}, paths, o, e), 0);
         const QJsonObject json = QJsonDocument::fromJson(out.toUtf8()).object();
-        QCOMPARE(json.value("version").toInt(), 1);
+        QCOMPARE(json.value("version").toInt(), 2);
         QCOMPARE(json.value("status").toString(), QString("ok"));
         QVERIFY(json.value("nextRun").toInteger() > QDateTime::currentSecsSinceEpoch());
         QVERIFY(err.isEmpty());
         // The scan it had to make is left for the next call.
         QVERIFY(conflictCacheFresh(readConflictCache(paths.appState + "/conflicts.json"), QDateTime::currentDateTimeUtc()));
+
+        // The command reads the same pause mark the window does.
+        PauseMark mark;
+        mark.present = true;
+        mark.since = QDateTime::currentDateTimeUtc();
+        QVERIFY(writePause(pauseFilePath(paths.appState), mark));
+        out.clear();
+        QCOMPARE(runStatusCommand({"--json"}, paths, o, e), 0);
+        const QJsonObject paused = QJsonDocument::fromJson(out.toUtf8()).object();
+        QCOMPARE(paused.value("status").toString(), QString("paused"));
+        QCOMPARE(paused.value("paused").toBool(), true);
+        QCOMPARE(paused.value("canSyncNow").toBool(), false);
     }
 
     // A long outage: the last success is older than the 40 runs the window
@@ -837,6 +1086,1267 @@ private slots:
         setup.check();
         QTRY_COMPARE(setup.state(), QString("noOmarchy"));
         QVERIFY(!QFileInfo(paths.userPlugins + "/syncwatch").isSymLink());
+    }
+    void syncConfigRoundTrips()
+    {
+        QTemporaryDir dir;
+        const QString file = dir.filePath("syncwatch/config.json");
+        const SyncConfig config = oldUnitConfig();
+        QString error;
+        QVERIFY2(saveSyncConfig(file, config, &error), qPrintable(error));
+        const auto loaded = loadSyncConfig(file, &error);
+        QVERIFY2(loaded.has_value(), qPrintable(error));
+        QCOMPARE(loaded->remote, config.remote);
+        QCOMPARE(loaded->localPath, config.localPath);
+        QCOMPARE(loaded->workDir, config.workDir);
+        QCOMPARE(loaded->filtersFile, config.filtersFile);
+        QCOMPARE(loaded->logFile, config.logFile);
+        QCOMPARE(loaded->rcloneFlags, config.rcloneFlags);
+        QCOMPARE(loaded->runOnlyWhen, config.runOnlyWhen);
+
+        // Anything the app cannot trust is no config at all, with a reason.
+        QVERIFY(write(dir.filePath("corrupt.json"), "{not json"));
+        QVERIFY(!loadSyncConfig(dir.filePath("corrupt.json"), &error).has_value());
+        QVERIFY(!error.isEmpty());
+        QVERIFY(write(dir.filePath("v9.json"), R"({"version":9,"remote":"gdrive:"})"));
+        QVERIFY(!loadSyncConfig(dir.filePath("v9.json"), &error).has_value());
+        QVERIFY(write(dir.filePath("nolocal.json"),
+                      R"({"version":1,"remote":"gdrive:","workDir":"/w","filtersFile":"/f","logFile":"/l","rcloneFlags":[]})"));
+        QVERIFY(!loadSyncConfig(dir.filePath("nolocal.json"), &error).has_value());
+        QVERIFY(error.contains("localPath"));
+        QVERIFY(!loadSyncConfig(dir.filePath("missing.json"), &error).has_value());
+    }
+
+    void rcloneArgumentsMatchTheOldUnit()
+    {
+        const SyncConfig config = oldUnitConfig();
+        const QStringList expected{"bisync", "gdrive:", "/home/someone/Drive",
+                                   "--workdir", "/home/someone/.local/state/rclone/bisync",
+                                   "--filters-file", "/home/someone/.config/syncwatch/filters.txt",
+                                   "--drive-skip-gdocs", "--drive-skip-shortcuts", "--resilient", "--recover",
+                                   "--max-lock", "2m", "--max-delete", "5", "--conflict-resolve", "newer",
+                                   "--log-level", "INFO",
+                                   "--log-file", "/home/someone/.local/state/drive-sync.log"};
+        const QStringList arguments = rcloneRunArguments(config);
+        QCOMPARE(arguments, expected);
+
+        // The same tokens the real unit passes, filters path aside: no flag invented or dropped.
+        QStringList real = QProcess::splitCommand(QString(kOldExecStart)).mid(1);
+        real.replace(real.indexOf("/home/someone/.config/rclone/gdrive-filtros.txt"),
+                     "/home/someone/.config/syncwatch/filters.txt");
+        QStringList a = arguments, b = real;
+        std::sort(a.begin(), a.end());
+        std::sort(b.begin(), b.end());
+        QCOMPARE(a, b);
+    }
+
+    void filtersUsableRequiresMatchingMd5()
+    {
+        QTemporaryDir dir;
+        const QString filters = dir.filePath("filters.txt");
+        QString why;
+        QVERIFY(!filtersUsable(filters, &why));
+        QVERIFY(why.contains("filters.txt"));
+
+        const QByteArray text = "- .git/**\n- node_modules/**\n";
+        QVERIFY(write(filters, text));
+        QVERIFY(!filtersUsable(filters, &why));
+        QVERIFY(why.contains(".md5"));
+
+        // bisync writes the hex digest alone, with no newline.
+        QVERIFY(write(filters + ".md5", QCryptographicHash::hash(text, QCryptographicHash::Md5).toHex()));
+        QVERIFY2(filtersUsable(filters, &why), qPrintable(why));
+
+        QVERIFY(write(filters, text + "- .venv/**\n"));
+        QVERIFY(!filtersUsable(filters, &why));
+        QVERIFY(why.contains("changed"));
+    }
+    void pauseMarkRoundTrips()
+    {
+        QTemporaryDir dir;
+        const QString file = pauseFilePath(dir.filePath("state"));  // the folder does not exist yet
+        QCOMPARE(file, dir.filePath("state") + "/paused.json");
+        QVERIFY(!readPause(file).present);
+
+        PauseMark mark;
+        mark.present = true;
+        mark.since = QDateTime::fromSecsSinceEpoch(1794067200, QTimeZone::UTC);
+        mark.until = QDateTime::fromSecsSinceEpoch(1794070800, QTimeZone::UTC);
+        QVERIFY(writePause(file, mark));
+        PauseMark back = readPause(file);
+        QVERIFY(back.present);
+        QCOMPARE(back.since, mark.since);
+        QCOMPARE(back.until, mark.until);
+        QVERIFY(!back.lastReminder.isValid());
+
+        mark.until = QDateTime();  // until the user resumes
+        mark.lastReminder = mark.since.addSecs(86400);
+        QVERIFY(writePause(file, mark));
+        back = readPause(file);
+        QVERIFY(!back.until.isValid());
+        QCOMPARE(back.lastReminder, mark.lastReminder);
+
+        QVERIFY(clearPause(file));
+        QVERIFY(!readPause(file).present);
+        QVERIFY(clearPause(file));  // nothing to clear is fine
+    }
+
+    void corruptPauseFailsSafe()
+    {
+        // A mark that cannot be read still holds the runs: syncing while the
+        // user asked for a pause is worse than one extra "paused".
+        QTemporaryDir dir;
+        const QString file = dir.filePath("paused.json");
+        QVERIFY(write(file, "{oops"));
+        const PauseMark mark = readPause(file);
+        QVERIFY(mark.present);
+        QVERIFY(!mark.until.isValid());
+        QVERIFY(!pauseEnded(mark, QDateTime::currentDateTimeUtc()));
+    }
+
+    void nextMorningPicksTheNext8am()
+    {
+        const QTimeZone zone("America/Sao_Paulo");
+        const QDate day(2026, 11, 9);
+        auto at = [&](const QDate &d, int h, int m) { return QDateTime(d, QTime(h, m), zone); };
+        QCOMPARE(nextMorning(at(day, 7, 59)), at(day, 8, 0).toUTC());
+        QCOMPARE(nextMorning(at(day, 8, 0)), at(day.addDays(1), 8, 0).toUTC());
+        QCOMPARE(nextMorning(at(day, 23, 0)), at(day.addDays(1), 8, 0).toUTC());
+        QCOMPARE(nextMorning(at(day, 8, 0)).timeSpec(), Qt::UTC);
+    }
+
+    void pauseEndedOnlyAfterItsEnd()
+    {
+        PauseMark mark;
+        mark.present = true;
+        const QDateTime now = QDateTime::fromSecsSinceEpoch(1794067200, QTimeZone::UTC);
+        QVERIFY(!pauseEnded(mark, now));  // no end
+        mark.until = now.addSecs(60);
+        QVERIFY(!pauseEnded(mark, now));
+        mark.until = now;
+        QVERIFY(pauseEnded(mark, now));
+        QVERIFY(!pauseEnded(PauseMark(), now));  // no mark, nothing ended
+    }
+
+    void pausedBeatsLateAndFailed()
+    {
+        SyncInputs in = healthy();
+        in.lastOutcome = "failed";
+        in.lastCauseKind = "outOfSync";
+        in.lastSuccess = in.now.addSecs(-3 * 3600);
+        in.paused = true;
+        SyncSummary s = Backend::summarize(in);
+        QCOMPARE(s.status, QString("paused"));
+        QVERIFY(!s.warnings.contains("stale"));
+        QCOMPARE(toneFor("paused"), QString("warning"));
+
+        in.running = true;  // a run that started before the pause still shows
+        QCOMPARE(Backend::summarize(in).status, QString("running"));
+    }
+
+    void pauseEndedKeepsPausedUntilARunStarts()
+    {
+        // The mark stays until run-condition clears it at the next tick, so
+        // between the end and that tick the state is still "paused", never
+        // "skipped" from the last tick the pause held back.
+        const QDateTime now(QDate(2026, 11, 7), QTime(16, 0, 0), QTimeZone::UTC);
+        SnapshotSources src = idleSources(successfulRun(now.toLocalTime().addSecs(-3600), 480), now);
+        src.service["Result"] = "exec-condition";
+        src.managed = true;
+        src.pause.present = true;
+        src.pause.since = now.addSecs(-7200);
+        src.pause.until = now.addSecs(-60);
+        const Snapshot snap = buildSnapshot(src);
+        QCOMPARE(snap.summary.status, QString("paused"));
+        QVERIFY(snap.paused);
+        QVERIFY(snap.managed);
+        QCOMPARE(snap.pausedUntil, src.pause.until);
+        QVERIFY(snap.canSyncNow);  // the run clears the ended pause itself
+
+        src.pause = PauseMark();
+        const Snapshot after = buildSnapshot(src);
+        QCOMPARE(after.summary.status, QString("skipped"));
+        QVERIFY(!after.paused);
+        QVERIFY(after.canSyncNow);
+    }
+    void syncStartsTheServiceWithoutBlocking()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), false);
+        QString out, err;
+        QTextStream o(&out), e(&err);
+        QCOMPARE(runSyncCommand({}, paths, o, e), 0);
+        QCOMPARE(calls(dir.path()), QStringList{"systemctl --user start --no-block drive-sync.service"});
+
+        out.clear();
+        QCOMPARE(runSyncCommand({"--json"}, paths, o, e), 0);
+        QCOMPARE(QJsonDocument::fromJson(out.toUtf8()).object().value("ok").toBool(), true);
+
+        // systemctl's own words reach the caller.
+        QTemporaryDir failing;
+        out.clear();
+        QCOMPARE(runSyncCommand({"--json"}, controlPaths(failing.path(), false, 1), o, e), 1);
+        const QJsonObject answer = QJsonDocument::fromJson(out.toUtf8()).object();
+        QCOMPARE(answer.value("ok").toBool(), false);
+        QVERIFY(answer.value("error").toString().contains("denied"));
+        QCOMPARE(runSyncCommand({"--bogus"}, paths, o, e), 1);
+    }
+
+    void syncIsRefusedWhilePaused()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        PauseMark mark;
+        mark.present = true;
+        QVERIFY(writePause(pauseFilePath(paths.appState), mark));
+        QString out, err;
+        QTextStream o(&out), e(&err);
+        QCOMPARE(runSyncCommand({}, paths, o, e), 1);
+        QVERIFY(calls(dir.path()).isEmpty());
+        QVERIFY(err.contains("paused"));
+    }
+
+    void pauseIsRefusedWhenNotManaged()
+    {
+        // The old units never look at the mark, so a pause there would be a lie.
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), false);
+        QString out, err;
+        QTextStream o(&out), e(&err);
+        QCOMPARE(runPauseCommand({}, paths, QDateTime::currentDateTimeUtc(), o, e), 1);
+        QVERIFY(!readPause(pauseFilePath(paths.appState)).present);
+        QVERIFY(err.contains("SyncWatch"));
+    }
+
+    void pauseWritesTheEnd()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        const QDateTime now = QDateTime::fromSecsSinceEpoch(1794067200, QTimeZone::UTC);
+        QString out, err;
+        QTextStream o(&out), e(&err);
+        const QString file = pauseFilePath(paths.appState);
+
+        QCOMPARE(runPauseCommand({"--minutes", "60"}, paths, now, o, e), 0);
+        PauseMark mark = readPause(file);
+        QVERIFY(mark.present);
+        QCOMPARE(mark.since, now);
+        QCOMPARE(mark.until, now.addSecs(3600));
+
+        QCOMPARE(runPauseCommand({}, paths, now.addSecs(60), o, e), 0);
+        mark = readPause(file);
+        QVERIFY(!mark.until.isValid());
+        QCOMPARE(mark.since, now);  // a longer pause keeps when the pause began
+
+        QCOMPARE(runPauseCommand({"--until-tomorrow"}, paths, now, o, e), 0);
+        QCOMPARE(readPause(file).until, nextMorning(now.toLocalTime()));
+
+        for (const QStringList &bad : {QStringList{"--minutes"}, QStringList{"--minutes", "0"},
+                                       QStringList{"--minutes", "x"}, QStringList{"--later"}})
+            QCOMPARE(runPauseCommand(bad, paths, now, o, e), 1);
+        QVERIFY(calls(dir.path()).isEmpty());  // pausing never touches systemd
+    }
+
+    void resumeClearsTheMarkAndStartsARun()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        PauseMark mark;
+        mark.present = true;
+        QVERIFY(writePause(pauseFilePath(paths.appState), mark));
+        QString out, err;
+        QTextStream o(&out), e(&err);
+        QCOMPARE(runResumeCommand({}, paths, o, e), 0);
+        QVERIFY(!readPause(pauseFilePath(paths.appState)).present);
+        QCOMPARE(calls(dir.path()), QStringList{"systemctl --user start --no-block drive-sync.service"});
+    }
+
+    void conditionFollowsThePause()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        const QString file = pauseFilePath(paths.appState);
+        SyncConfig config = oldUnitConfig();
+        config.runOnlyWhen.clear();
+        const QDateTime now = QDateTime::fromSecsSinceEpoch(1794067200, QTimeZone::UTC);
+
+        QCOMPARE(runConditionCommand(paths, config, now), 0);
+
+        PauseMark mark;
+        mark.present = true;
+        mark.until = now.addSecs(60);
+        QVERIFY(writePause(file, mark));
+        QCOMPARE(runConditionCommand(paths, config, now), 1);
+        QVERIFY(readPause(file).present);
+
+        // The first tick after the end runs, and the mark is gone with it.
+        QCOMPARE(runConditionCommand(paths, config, now.addSecs(60)), 0);
+        QVERIFY(!readPause(file).present);
+    }
+
+    void conditionSkipsWhenRunOnlyWhenFails()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        SyncConfig config = oldUnitConfig();
+        const QDateTime now = QDateTime::fromSecsSinceEpoch(1794067200, QTimeZone::UTC);
+        config.runOnlyWhen = "true";
+        QCOMPARE(runConditionCommand(paths, config, now), 0);
+        config.runOnlyWhen = "false";
+        QCOMPARE(runConditionCommand(paths, config, now), 1);
+
+        // An ended pause is not cleared by a tick that could not run anyway.
+        PauseMark mark;
+        mark.present = true;
+        mark.until = now.addSecs(-60);
+        QVERIFY(writePause(pauseFilePath(paths.appState), mark));
+        QCOMPARE(runConditionCommand(paths, config, now), 1);
+        QVERIFY(readPause(pauseFilePath(paths.appState)).present);
+    }
+
+    void runRefusesWithoutMatchingMd5()
+    {
+        QTemporaryDir dir;
+        SyncConfig config = oldUnitConfig();
+        config.filtersFile = dir.filePath("filters.txt");
+        QVERIFY(write(config.filtersFile, "- .git/**\n"));
+        QString refusal;
+        QVERIFY(runCommandPlan(config, &refusal).isEmpty());
+        QVERIFY(refusal.contains("filters.txt.md5"));
+
+        QVERIFY(write(config.filtersFile + ".md5",
+                      QCryptographicHash::hash("- .git/**\n", QCryptographicHash::Md5).toHex()));
+        refusal.clear();
+        QCOMPARE(runCommandPlan(config, &refusal), rcloneRunArguments(config));
+        QVERIFY(refusal.isEmpty());
+    }
+    void notifyIsQuietOnExecCondition()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        QCOMPARE(runNotifyCommand("exec-condition", paths, fakeNotifier(dir.path()), QDateTime::currentDateTimeUtc()), 0);
+        QVERIFY(notifications(dir.path()).isEmpty());
+    }
+
+    void notifyWarnsOnceThenHourly()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        QVERIFY(write(paths.log, failedRun(QDateTime::currentDateTime().addSecs(-60)).toUtf8()));
+        const NotifierPaths tools = fakeNotifier(dir.path());
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+
+        QCOMPARE(runNotifyCommand("exit-code", paths, tools, now), 0);
+        QStringList sent = notifications(dir.path());
+        QCOMPARE(sent.size(), 1);
+        QVERIFY(sent.at(0).contains("-u critical"));
+        QVERIFY(sent.at(0).contains("Drive stopped syncing"));
+
+        QCOMPARE(runNotifyCommand("exit-code", paths, tools, now.addSecs(600)), 0);
+        QCOMPARE(notifications(dir.path()).size(), 1);  // ten minutes later: nothing new
+
+        QCOMPARE(runNotifyCommand("exit-code", paths, tools, now.addSecs(3660)), 0);
+        sent = notifications(dir.path());
+        QCOMPARE(sent.size(), 2);
+        QVERIFY(sent.at(1).contains("Drive is still stopped"));
+        // The old card goes away first, by id and by title.
+        const QStringList all = calls(dir.path());
+        QVERIFY(all.contains("gdbus call --session --dest org.freedesktop.Notifications --object-path "
+                             "/org/freedesktop/Notifications --method org.freedesktop.Notifications.CloseNotification 41"));
+        QVERIFY(all.contains("omarchy notification dismiss Drive stopped syncing"));
+    }
+
+    void notifyNamesTheCause()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        QVERIFY(write(paths.log, failedRun(QDateTime::currentDateTime().addSecs(-60)).toUtf8()));
+        const NotifierPaths tools = fakeNotifier(dir.path());
+        QCOMPARE(runNotifyCommand("exit-code", paths, tools, QDateTime::currentDateTimeUtc()), 0);
+        QVERIFY(notifications(dir.path()).at(0).contains("bisync lost its listings"));
+        QVERIFY(notifications(dir.path()).at(0).contains("syncwatch takeover --undo"));
+
+        QTemporaryDir other;
+        const BackendPaths timeoutPaths = controlPaths(other.path(), true);
+        QCOMPARE(runNotifyCommand("timeout", timeoutPaths, fakeNotifier(other.path()), QDateTime::currentDateTimeUtc()), 0);
+        QVERIFY(notifications(other.path()).at(0).contains("time limit"));
+
+        // A run SyncWatch refused to start leaves its reason in the log.
+        QTemporaryDir refused;
+        const BackendPaths refusedPaths = controlPaths(refused.path(), true);
+        QVERIFY(write(refusedPaths.log, line(QDateTime::currentDateTime(), "CRITICAL",
+                                             "SyncWatch did not start rclone: filters.txt.md5 is missing").toUtf8()));
+        QCOMPARE(runNotifyCommand("exit-code", refusedPaths, fakeNotifier(refused.path()), QDateTime::currentDateTimeUtc()), 0);
+        QVERIFY(notifications(refused.path()).at(0).contains("filters.txt.md5 is missing"));
+    }
+
+    void notifyWithoutASessionRetries()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        const NotifierPaths tools = fakeNotifier(dir.path());
+        QVERIFY(write(dir.filePath("ids.txt"), "none\n"));
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        QCOMPARE(runNotifyCommand("exit-code", paths, tools, now), 0);
+        QVERIFY(write(dir.filePath("ids.txt"), "7\n"));
+        QCOMPARE(runNotifyCommand("exit-code", paths, tools, now.addSecs(60)), 0);
+        const QStringList sent = notifications(dir.path());
+        QCOMPARE(sent.size(), 2);
+        // Still the first notice: none ever reached the screen.
+        QVERIFY(sent.at(1).contains("Drive stopped syncing"));
+    }
+
+    void successClosesAndSaysSinceWhen()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        const NotifierPaths tools = fakeNotifier(dir.path());
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        QCOMPARE(runNotifyCommand("exit-code", paths, tools, now), 0);
+        QCOMPARE(runNotifyCommand("success", paths, tools, now.addSecs(900)), 0);
+        const QStringList sent = notifications(dir.path());
+        QCOMPARE(sent.size(), 2);
+        QVERIFY(sent.at(1).contains("-u normal"));
+        QVERIFY(sent.at(1).contains("Drive is syncing again"));
+        QVERIFY(calls(dir.path()).contains("omarchy notification dismiss Drive is still stopped"));
+
+        // Once back, another success says nothing.
+        QCOMPARE(runNotifyCommand("success", paths, tools, now.addSecs(1800)), 0);
+        QCOMPARE(notifications(dir.path()).size(), 2);
+    }
+
+    void watchdogWarnsWhenRunsCannotHappen()
+    {
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        SyncConfig config = oldUnitConfig();
+        config.runOnlyWhen.clear();
+        const struct {
+            QString load, active, enabled, expected;
+        } cases[] = {{"not-found", "active", "enabled", "does not load"},
+                     {"loaded", "inactive", "enabled", "drive-sync.timer is inactive"},
+                     {"loaded", "active", "disabled", "next boot"}};
+        for (const auto &c : cases) {
+            QTemporaryDir dir;
+            BackendPaths paths = controlPaths(dir.path(), true);
+            paths.systemctl = watchdogSystemctl(dir.path(), c.load, c.active, c.enabled);
+            QCOMPARE(runWatchdogCommand(paths, config, fakeNotifier(dir.path()), now), 0);
+            const QStringList sent = notifications(dir.path());
+            QCOMPARE(sent.size(), 1);
+            QVERIFY2(sent.at(0).contains(c.expected), qPrintable(sent.at(0)));
+            QVERIFY(sent.at(0).contains("Drive will not sync"));
+        }
+
+        // All well: silent, and a problem seen before is closed with a notice.
+        QTemporaryDir dir;
+        BackendPaths paths = controlPaths(dir.path(), true);
+        const NotifierPaths tools = fakeNotifier(dir.path());
+        paths.systemctl = watchdogSystemctl(dir.path(), "loaded", "inactive", "enabled");
+        QCOMPARE(runWatchdogCommand(paths, config, tools, now), 0);
+        paths.systemctl = watchdogSystemctl(dir.path(), "loaded", "active", "enabled");
+        QCOMPARE(runWatchdogCommand(paths, config, tools, now.addSecs(3600)), 0);
+        QCOMPARE(runWatchdogCommand(paths, config, tools, now.addSecs(7200)), 0);
+        const QStringList sent = notifications(dir.path());
+        QCOMPARE(sent.size(), 2);
+        QVERIFY(sent.at(1).contains("Drive timer is back"));
+    }
+
+    void watchdogRespectsRunOnlyWhen()
+    {
+        QTemporaryDir dir;
+        BackendPaths paths = controlPaths(dir.path(), true);
+        paths.systemctl = watchdogSystemctl(dir.path(), "loaded", "inactive", "enabled");
+        SyncConfig config = oldUnitConfig();
+        config.runOnlyWhen = "false";
+        QCOMPARE(runWatchdogCommand(paths, config, fakeNotifier(dir.path()), QDateTime::currentDateTimeUtc()), 0);
+        QVERIFY(notifications(dir.path()).isEmpty());
+    }
+
+    void watchdogRemindsDailyOnlyForAPauseWithNoEnd()
+    {
+        QTemporaryDir dir;
+        BackendPaths paths = controlPaths(dir.path(), true);
+        paths.systemctl = watchdogSystemctl(dir.path(), "loaded", "active", "enabled");
+        SyncConfig config = oldUnitConfig();
+        config.runOnlyWhen.clear();
+        const NotifierPaths tools = fakeNotifier(dir.path());
+        const QDateTime now = QDateTime::fromSecsSinceEpoch(1794067200, QTimeZone::UTC);
+        PauseMark mark;
+        mark.present = true;
+        mark.since = now;
+        QVERIFY(writePause(pauseFilePath(paths.appState), mark));
+
+        QCOMPARE(runWatchdogCommand(paths, config, tools, now.addSecs(3600)), 0);
+        QVERIFY(notifications(dir.path()).isEmpty());  // a fresh pause is fine
+        QCOMPARE(runWatchdogCommand(paths, config, tools, now.addSecs(86400)), 0);
+        QCOMPARE(notifications(dir.path()).size(), 1);
+        QVERIFY(notifications(dir.path()).at(0).contains("SyncWatch is still paused"));
+        QCOMPARE(runWatchdogCommand(paths, config, tools, now.addSecs(86400 + 3600)), 0);
+        QCOMPARE(notifications(dir.path()).size(), 1);  // once a day
+        QCOMPARE(runWatchdogCommand(paths, config, tools, now.addSecs(2 * 86400)), 0);
+        QCOMPARE(notifications(dir.path()).size(), 2);
+
+        // A pause with an end ends by itself, so it needs no reminder.
+        mark.until = now.addSecs(10 * 86400);
+        mark.lastReminder = QDateTime();
+        QVERIFY(writePause(pauseFilePath(paths.appState), mark));
+        QCOMPARE(runWatchdogCommand(paths, config, tools, now.addSecs(5 * 86400)), 0);
+        QCOMPARE(notifications(dir.path()).size(), 2);
+    }
+    void detectReadsTheRealUnit()
+    {
+        QTemporaryDir dir;
+        const OldSetup old = makeOldSetup(dir.path());
+        const TakeoverPlan plan = detectTakeover(old.paths, settledSnapshot());
+        QCOMPARE(plan.state, QString("found"));
+        QVERIFY2(plan.blockers.isEmpty(), qPrintable(plan.blockers.join(", ")));
+        QVERIFY(plan.canApply());
+        QCOMPARE(plan.config.remote, QString("gdrive:"));
+        QCOMPARE(plan.config.localPath, old.home + "/Drive");
+        QCOMPARE(plan.config.workDir, old.home + "/.local/state/rclone/bisync");
+        QCOMPARE(plan.config.filtersFile, old.home + "/.config/syncwatch/filters.txt");
+        QCOMPARE(plan.config.logFile, old.home + "/.local/state/drive-sync.log");
+        QCOMPARE(plan.config.rcloneFlags,
+                 (QStringList{"--drive-skip-gdocs", "--drive-skip-shortcuts", "--resilient", "--recover",
+                              "--max-lock", "2m", "--max-delete", "5", "--conflict-resolve", "newer",
+                              "--log-level", "INFO"}));
+        QCOMPARE(plan.config.runOnlyWhen, QString("findmnt -no SOURCE /home | grep -q '^/dev/mapper/someone'"));
+        QCOMPARE(plan.oldFiltersFile, old.filters);
+        for (const QString &name : {QString("drive-sync.service"), QString("drive-sync-vigia.timer"),
+                                    QString("drive-sync.sh"), QString("gdrive-filtros.txt.md5")})
+            QVERIFY2(plan.found.join('\n').contains(name), qPrintable(name));
+    }
+
+    void detectIsNoneWithoutUnits()
+    {
+        QTemporaryDir dir;
+        const OldSetup old = makeOldSetup(dir.path());
+        QVERIFY(QFile::remove(old.paths.userUnits + "/drive-sync.service"));
+        QCOMPARE(detectTakeover(old.paths, settledSnapshot()).state, QString("none"));
+    }
+
+    void detectIsManagedWithAConfig()
+    {
+        QTemporaryDir dir;
+        const OldSetup old = makeOldSetup(dir.path());
+        QVERIFY(saveSyncConfig(old.paths.appConfigDir + "/config.json", oldUnitConfig(), nullptr));
+        const TakeoverPlan plan = detectTakeover(old.paths, settledSnapshot());
+        QCOMPARE(plan.state, QString("managed"));
+        QVERIFY(!plan.canApply());
+    }
+
+    void detectNamesEveryBlocker()
+    {
+        const auto blockersAfter = [](const std::function<void(OldSetup &, Snapshot &)> &change) {
+            QTemporaryDir dir;
+            OldSetup old = makeOldSetup(dir.path());
+            Snapshot snapshot = settledSnapshot();
+            change(old, snapshot);
+            const TakeoverPlan plan = detectTakeover(old.paths, snapshot);
+            return plan.blockers;
+        };
+        QCOMPARE(blockersAfter([](OldSetup &, Snapshot &s) { s.running = true; }), QStringList{"running"});
+        QCOMPARE(blockersAfter([](OldSetup &, Snapshot &s) { s.resync = true; }), QStringList{"running"});
+        QCOMPARE(blockersAfter([](OldSetup &, Snapshot &s) { s.lastRunOutcome = "failed"; }),
+                 QStringList{"lastRunNotSuccess"});
+        QCOMPARE(blockersAfter([](OldSetup &o, Snapshot &) {
+                     QFile::remove(o.home + "/.local/state/rclone/bisync/gdrive_..home_Drive.path2.lst");
+                 }),
+                 QStringList{"noListings"});
+        QCOMPARE(blockersAfter([](OldSetup &o, Snapshot &) { write(o.filters, "- changed/**\n"); }),
+                 QStringList{"filtersChanged"});
+        QCOMPARE(blockersAfter([](OldSetup &o, Snapshot &) {
+                     write(o.paths.rclone, "#!/bin/sh\necho other:\n");
+                 }),
+                 QStringList{"remoteMissing"});
+        QCOMPARE(blockersAfter([](OldSetup &o, Snapshot &) {
+                     write(o.paths.userUnits + "/drive-sync.service",
+                           "[Service]\nType=oneshot\nExecStart=/usr/bin/unison profile\n");
+                 }),
+                 QStringList{"unreadableUnit"});
+        QCOMPARE(blockersAfter([](OldSetup &o, Snapshot &) {
+                     write(o.paths.userUnits + "/drive-sync.service",
+                           (oldServiceText(o.home) + "Environment=RCLONE_CONFIG=/elsewhere\n").toUtf8());
+                 }),
+                 QStringList{"unknownDirective:Environment"});
+        QCOMPARE(blockersAfter([](OldSetup &o, Snapshot &) {
+                     write(o.paths.userUnits + "/drive-sync.service",
+                           oldServiceText(o.home).replace("Nice=10", "Nice=5").toUtf8());
+                 }),
+                 QStringList{"differentValue:Nice"});
+        QCOMPARE(blockersAfter([](OldSetup &o, Snapshot &) {
+                     write(o.paths.userUnits + "/drive-sync.timer", "[Timer]\nOnBootSec=5min\nOnUnitActiveSec=30min\n");
+                 }),
+                 QStringList{"differentValue:OnUnitActiveSec"});
+        QCOMPARE(blockersAfter([](OldSetup &o, Snapshot &) {
+                     QDir().mkpath(o.paths.appConfigDir);
+                     write(o.paths.appConfigDir + "/filters.txt", "left behind\n");
+                 }),
+                 QStringList{"targetExists"});
+    }
+    void takeoverMovesEverythingAndWritesTheManifest()
+    {
+        QTemporaryDir dir;
+        OldSetup old = makeOldSetup(dir.path());
+        old.paths.systemctl = takeoverSystemctl(dir.path(), 0);
+        const TakeoverPlan plan = detectTakeover(old.paths, settledSnapshot());
+        QVERIFY(plan.canApply());
+        const QDateTime now(QDate(2026, 11, 9), QTime(10, 0), QTimeZone::UTC);
+        QString error;
+        QVERIFY2(applyTakeover(old.paths, plan, now, &error), qPrintable(error));
+
+        // The config and the filters with their md5, byte for byte.
+        const auto config = loadSyncConfig(old.paths.appConfigDir + "/config.json", &error);
+        QVERIFY2(config.has_value(), qPrintable(error));
+        QCOMPARE(config->filtersFile, old.paths.appConfigDir + "/filters.txt");
+        QVERIFY(filtersUsable(config->filtersFile, &error));
+        QCOMPARE(rcloneRunArguments(*config).mid(0, 5), (QStringList{"bisync", "gdrive:", old.home + "/Drive",
+                                                                     "--workdir", plan.config.workDir}));
+
+        // Every old file is in the backup, none is left where it ran from.
+        const QDir backups(old.paths.backupRoot);
+        const QStringList stamps = backups.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        QCOMPARE(stamps.size(), 1);
+        const QString backup = backups.filePath(stamps.first());
+        QVERIFY(QFile::exists(backup + "/manifest.json"));
+        for (const QString &original : plan.found) {
+            QVERIFY2(!QFileInfo::exists(original), qPrintable(original));
+        }
+        QVERIFY(QFile::exists(backup + "/systemd/drive-sync.service"));
+        QVERIFY(QFile::exists(backup + "/bin/drive-sync.sh"));
+        QVERIFY(QFile::exists(backup + "/rclone/gdrive-filtros.txt.md5"));
+        QVERIFY(QFile::exists(backup + "/state/drive-sync/aviso"));
+
+        // The packaged units are checked before any timer starts, and the
+        // old filters move only after the second wait.
+        QCOMPARE(systemctlCalls(dir.path()),
+                 (QStringList{"systemctl --user is-enabled drive-sync.timer",
+                              "systemctl --user is-active drive-sync.timer",
+                              "systemctl --user is-enabled drive-sync-vigia.timer",
+                              "systemctl --user is-active drive-sync-vigia.timer",
+                              "systemctl --user stop drive-sync.timer drive-sync-vigia.timer",
+                              "systemctl --user is-active drive-sync.service",
+                              "systemctl --user disable drive-sync.timer drive-sync-vigia.timer",
+                              "systemctl --user daemon-reload",
+                              "systemctl --user show -p FragmentPath,DropInPaths drive-sync.service drive-sync.timer",
+                              "systemctl --user is-active drive-sync.service",
+                              "systemctl --user enable --now drive-sync.timer drive-sync-watchdog.timer"}));
+        QVERIFY(!QFile::exists(takeoverLockPath(old.paths.appState)));
+    }
+
+    void takeoverRollsBackAtEveryStep()
+    {
+        // Each of the eleven systemctl calls fails in turn; then a move fails
+        // halfway (12), the backup folder cannot be made (13), and the old
+        // filters cannot move after the reload (14).
+        for (int failAt = 1; failAt <= 14; ++failAt) {
+            QTemporaryDir dir;
+            OldSetup old = makeOldSetup(dir.path());
+            const QString rcloneDir = QFileInfo(old.filters).path();
+            old.paths.systemctl = takeoverSystemctl(dir.path(), failAt <= 11 ? failAt : 0, "inactive",
+                                                    "/usr/lib/systemd/user",
+                                                    failAt == 14 ? QString("chmod a-w '%1'").arg(rcloneDir) : ":");
+            old.paths.serviceWaitMs = 300;
+            const QString bin = old.paths.binDir;
+            if (failAt == 12)  // the units move, then the scripts cannot leave their folder
+                QFile::setPermissions(bin, QFile::ReadOwner | QFile::ExeOwner);
+            if (failAt == 13) {
+                // A file where the backup folder should go: the move cannot happen.
+                QDir().mkpath(QFileInfo(old.paths.backupRoot).path());
+                QVERIFY(write(old.paths.backupRoot, "in the way"));
+            }
+            const auto restore = qScopeGuard([&] {
+                QFile::setPermissions(bin, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+                QFile::setPermissions(rcloneDir, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+            });
+            const auto before = filesUnder(old.home);
+            const TakeoverPlan plan = detectTakeover(old.paths, settledSnapshot());
+            QVERIFY(plan.canApply());
+            QString error;
+            QVERIFY2(!applyTakeover(old.paths, plan, QDateTime::currentDateTimeUtc(), &error),
+                     qPrintable(QString("step %1 did not fail").arg(failAt)));
+            QVERIFY(!error.isEmpty());
+            QCOMPARE(filesUnder(old.home), before);
+            if (failAt >= 5)
+                QVERIFY2(calls(dir.path()).contains("systemctl --user start drive-sync.timer drive-sync-vigia.timer"),
+                         qPrintable(QString("old timers not back after step %1").arg(failAt)));
+            if (failAt >= 7)
+                QVERIFY2(calls(dir.path()).contains("systemctl --user enable drive-sync.timer drive-sync-vigia.timer"),
+                         qPrintable(QString("old timers not enabled again after step %1").arg(failAt)));
+            if (failAt == 11) {
+                // One timer definition at a time: the packaged ones go, systemd
+                // reloads with the old files back, and only then the old ones return.
+                const QStringList made = systemctlCalls(dir.path());
+                const auto at = [&](const QString &call) { return made.lastIndexOf("systemctl --user " + call); };
+                QVERIFY(at("disable --now drive-sync.timer drive-sync-watchdog.timer") < at("daemon-reload"));
+                QVERIFY(at("daemon-reload") < at("enable drive-sync.timer drive-sync-vigia.timer"));
+            }
+        }
+    }
+
+    void takeoverAndUndoNeverRunAtOnce()
+    {
+        QTemporaryDir dir;
+        OldSetup old = makeOldSetup(dir.path());
+        old.paths.systemctl = takeoverSystemctl(dir.path(), 0);
+        QDir().mkpath(old.paths.appState);
+        // Another syncwatch, alive, holds the lock: apply and undo both refuse
+        // and leave its lock alone.
+        const QString other = dir.filePath("syncwatch");
+        QVERIFY(write(other, "#!/bin/sh\nsleep 30\n"));
+        QFile::setPermissions(other, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        QProcess holder;
+        holder.start("/bin/sh", {other});
+        QVERIFY(holder.waitForStarted());
+        const QByteArray holderPid = QByteArray::number(holder.processId());
+        QVERIFY(write(takeoverLockPath(old.paths.appState), holderPid));
+        QString error;
+        QVERIFY(!applyTakeover(old.paths, detectTakeover(old.paths, settledSnapshot()), QDateTime::currentDateTimeUtc(),
+                               &error));
+        QVERIFY2(error.contains("another"), qPrintable(error));
+        QVERIFY(!undoTakeover(old.paths, &error));
+        QVERIFY2(error.contains("another"), qPrintable(error));
+        QFile lock(takeoverLockPath(old.paths.appState));
+        QVERIFY(lock.open(QIODevice::ReadOnly));
+        QCOMPARE(lock.readAll(), holderPid);
+        lock.close();
+        holder.kill();
+        holder.waitForFinished();
+
+        // A lock left by a takeover that died is replaced, and released after.
+        QVERIFY(write(takeoverLockPath(old.paths.appState), "999999999\n"));
+        QVERIFY2(applyTakeover(old.paths, detectTakeover(old.paths, settledSnapshot()), QDateTime::currentDateTimeUtc(),
+                               &error),
+                 qPrintable(error));
+        QVERIFY(!QFile::exists(takeoverLockPath(old.paths.appState)));
+    }
+
+    void takeoverLeavesEveryTimerOffWhenAFileCannotGoBack()
+    {
+        // The packaged unit is not the one systemd uses, and at that moment
+        // the old units' folder turns read-only: they cannot go back, so the
+        // old timers must not start without them.
+        QTemporaryDir dir;
+        OldSetup old = makeOldSetup(dir.path());
+        const QString units = old.paths.userUnits;
+        old.paths.systemctl = takeoverSystemctl(dir.path(), 0, "inactive", "/somewhere/else",
+                                                QString("chmod a-w '%1'").arg(units));
+        const auto restore = qScopeGuard([&] {
+            QFile::setPermissions(units, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        });
+        QString error;
+        QVERIFY(!applyTakeover(old.paths, detectTakeover(old.paths, settledSnapshot()), QDateTime::currentDateTimeUtc(),
+                               &error));
+        QVERIFY2(error.contains("left off"), qPrintable(error));
+        const QStringList after = systemctlCalls(dir.path());
+        const int show = int(after.indexOf(QRegularExpression(".*FragmentPath.*")));
+        QVERIFY(show > 0);
+        for (const QString &call : after.mid(show + 1)) {
+            QVERIFY2(!call.contains(" start ") && !call.contains(" enable "), qPrintable(call));
+        }
+        // The old filters never left; SyncWatch's copy and config are gone, so
+        // the window does not claim to run drive-sync.
+        QVERIFY(filtersUsable(old.filters, nullptr));
+        QVERIFY(!QFile::exists(old.paths.appConfigDir + "/config.json"));
+        QVERIFY(!QFile::exists(old.paths.appConfigDir + "/filters.txt"));
+    }
+
+    void syncIsRefusedDuringATakeover()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), false);
+        QDir().mkpath(paths.appState);
+        BackendPaths live = paths;
+        live.proc = "/proc";
+        // This test runs as syncwatch_tests, a live syncwatch process.
+        QVERIFY(write(takeoverLockPath(live.appState), QByteArray::number(QCoreApplication::applicationPid())));
+        QString out, err;
+        QTextStream o(&out), e(&err);
+        QCOMPARE(runSyncCommand({}, live, o, e), 1);
+        QVERIFY(err.contains("takeover"));
+        QVERIFY(calls(dir.path()).isEmpty());
+
+        // A takeover killed halfway leaves its lock behind: it does not count.
+        QVERIFY(write(takeoverLockPath(live.appState), "999999999\n"));
+        QCOMPARE(runSyncCommand({}, live, o, e), 0);
+    }
+
+    void takeoverStopsWhenARunStartsDuringTheStop()
+    {
+        QTemporaryDir dir;
+        OldSetup old = makeOldSetup(dir.path());
+        old.paths.systemctl = takeoverSystemctl(dir.path(), 0, "activating");
+        old.paths.serviceWaitMs = 300;
+        const auto before = filesUnder(old.home);
+        QString error;
+        QVERIFY(!applyTakeover(old.paths, detectTakeover(old.paths, settledSnapshot()), QDateTime::currentDateTimeUtc(),
+                               &error));
+        QVERIFY(error.contains("run"));
+        QCOMPARE(filesUnder(old.home), before);
+    }
+
+    void undoRestoresTheOriginalFiles()
+    {
+        QTemporaryDir dir;
+        OldSetup old = makeOldSetup(dir.path());
+        old.paths.systemctl = takeoverSystemctl(dir.path(), 0);
+        const QStringList skip{".config/syncwatch", ".local/share/syncwatch", ".local/state/syncwatch"};
+        const auto before = filesUnder(old.home, skip);
+        QString error;
+        QVERIFY(applyTakeover(old.paths, detectTakeover(old.paths, settledSnapshot()), QDateTime::currentDateTimeUtc(),
+                              &error));
+        QFile::remove(dir.filePath("calls.log"));
+        PauseMark pause;
+        pause.present = true;
+        QVERIFY(writePause(pauseFilePath(old.paths.appState), pause));
+        QVERIFY2(undoTakeover(old.paths, &error), qPrintable(error));
+        QVERIFY(!readPause(pauseFilePath(old.paths.appState)).present);
+        QCOMPARE(filesUnder(old.home, skip), before);
+        QVERIFY(!QFile::exists(old.paths.appConfigDir + "/config.json"));
+        QVERIFY(!QFile::exists(old.paths.appConfigDir + "/filters.txt"));
+        QCOMPARE(detectTakeover(old.paths, settledSnapshot()).state, QString("found"));
+        // One timer definition at a time: the packaged ones go before the old ones come back.
+        QCOMPARE(systemctlCalls(dir.path()),
+                 (QStringList{"systemctl --user is-active drive-sync.service",
+                              "systemctl --user is-enabled drive-sync.timer",
+                              "systemctl --user is-active drive-sync.timer",
+                              "systemctl --user is-enabled drive-sync-watchdog.timer",
+                              "systemctl --user is-active drive-sync-watchdog.timer",
+                              "systemctl --user disable --now drive-sync.timer drive-sync-watchdog.timer",
+                              "systemctl --user is-active drive-sync.service",
+                              "systemctl --user daemon-reload",
+                              "systemctl --user enable --now drive-sync.timer drive-sync-vigia.timer"}));
+
+        // And it can be taken over again.
+        QVERIFY2(applyTakeover(old.paths, detectTakeover(old.paths, settledSnapshot()),
+                               QDateTime::currentDateTimeUtc().addSecs(120), &error),
+                 qPrintable(error));
+    }
+
+    void undoIsRefusedWhenFiltersChangedOrARunIsGoing()
+    {
+        QTemporaryDir dir;
+        OldSetup old = makeOldSetup(dir.path());
+        old.paths.systemctl = takeoverSystemctl(dir.path(), 0);
+        QString error;
+        QVERIFY(applyTakeover(old.paths, detectTakeover(old.paths, settledSnapshot()), QDateTime::currentDateTimeUtc(),
+                              &error));
+        QVERIFY(write(old.paths.appConfigDir + "/filters.txt", "- something new/**\n"));
+        QVERIFY(!undoTakeover(old.paths, &error));
+        QVERIFY(error.contains("filters"));
+        QVERIFY(QFile::exists(old.paths.appConfigDir + "/config.json"));
+
+        QTemporaryDir busy;
+        OldSetup other = makeOldSetup(busy.path());
+        other.paths.systemctl = takeoverSystemctl(busy.path(), 0);
+        QVERIFY(applyTakeover(other.paths, detectTakeover(other.paths, settledSnapshot()),
+                              QDateTime::currentDateTimeUtc(), &error));
+        other.paths.systemctl = takeoverSystemctl(busy.path(), 0, "active");
+        QVERIFY(!undoTakeover(other.paths, &error));
+        QVERIFY(error.contains("run"));
+    }
+
+    void movedFiltersKeepRealBisyncValid()
+    {
+        const QString rclone = QStandardPaths::findExecutable("rclone");
+        if (rclone.isEmpty())
+            QSKIP("rclone is not installed");
+        // Real rclone on two local folders, with no rclone config at all.
+        QTemporaryDir dir;
+        QDir d(dir.path());
+        for (const char *folder : {"a", "b", "work", "old", "new"})
+            d.mkpath(folder);
+        QVERIFY(write(dir.filePath("a/one.txt"), "one\n"));
+        QVERIFY(write(dir.filePath("old/filtros.txt"), "# Gerado pelo drive-sync.sh.\n- *.skip\n"));
+        auto bisync = [&](const QStringList &extra) {
+            QProcess p;
+            p.start(rclone, QStringList{"--config", "/dev/null", "bisync", dir.filePath("a"), dir.filePath("b"),
+                                        "--workdir", dir.filePath("work")} + extra);
+            p.waitForFinished(60000);
+            return p.exitCode();
+        };
+        QCOMPARE(bisync({"--filters-file", dir.filePath("old/filtros.txt"), "--resync", "-q"}), 0);
+        QVERIFY(QFile::exists(dir.filePath("old/filtros.txt.md5")));
+
+        QString error;
+        QVERIFY2(copyFiltersWithMd5(dir.filePath("old/filtros.txt"), dir.filePath("new/filters.txt"), &error),
+                 qPrintable(error));
+        QVERIFY(QFile::remove(dir.filePath("old/filtros.txt")));
+        QVERIFY(QFile::remove(dir.filePath("old/filtros.txt.md5")));
+
+        SyncConfig config;
+        config.remote = dir.filePath("a");
+        config.localPath = dir.filePath("b");
+        config.workDir = dir.filePath("work");
+        config.filtersFile = dir.filePath("new/filters.txt");
+        config.logFile = dir.filePath("sync.log");
+        config.rcloneFlags = {"--config", "/dev/null", "-q"};
+        QVERIFY(write(dir.filePath("a/two.txt"), "two\n"));
+        QProcess run;
+        run.start(rclone, runCommandPlan(config, &error));
+        run.waitForFinished(60000);
+        QCOMPARE(run.exitCode(), 0);
+        QVERIFY(QFile::exists(dir.filePath("b/two.txt")));
+        QVERIFY(QDir(dir.filePath("work")).entryList({"*-err"}).isEmpty());
+    }
+    void takeoverSetupOffersOnlyWhenItCanApply()
+    {
+        QTemporaryDir dir;
+        const QString program = fakeSyncwatch(
+            dir.path(), R"({"ok":true,"error":"","state":"found","found":["/a/drive-sync.service"],"blockers":[]})");
+        TakeoverSetup setup(program);
+        setup.check();
+        QTRY_COMPARE(setup.state(), QString("offer"));
+        QCOMPARE(setup.found(), QStringList{"/a/drive-sync.service"});
+        QCOMPARE(calls(dir.path()), QStringList{"syncwatch takeover --check --json"});
+
+        // The takeover itself, then a fresh look, which now says managed.
+        write(dir.filePath("answer.json"), R"({"ok":true,"error":"","state":"managed","found":[],"blockers":[]})");
+        setup.accept();
+        QTRY_COMPARE(setup.state(), QString("managed"));
+        QVERIFY(calls(dir.path()).contains("syncwatch takeover --apply --json"));
+
+        // Nothing to take over: no offer, and accept does nothing.
+        QTemporaryDir none;
+        TakeoverSetup quiet(fakeSyncwatch(none.path(), R"({"ok":true,"error":"","state":"none","found":[],"blockers":[]})"));
+        quiet.check();
+        QTRY_COMPARE(quiet.state(), QString("none"));
+        quiet.accept();
+        QCOMPARE(calls(none.path()), QStringList{"syncwatch takeover --check --json"});
+    }
+
+    void takeoverSetupShowsBlockersAndFailures()
+    {
+        QTemporaryDir dir;
+        const QString program = fakeSyncwatch(
+            dir.path(), R"({"ok":true,"error":"","state":"found","found":[],"blockers":["running","differentValue:Nice"]})");
+        TakeoverSetup setup(program);
+        setup.check();
+        QTRY_COMPARE(setup.state(), QString("blocked"));
+        QCOMPARE(setup.blockers(), (QStringList{"running", "differentValue:Nice"}));
+
+        QTemporaryDir failing;
+        TakeoverSetup broken(fakeSyncwatch(
+            failing.path(), R"({"ok":true,"error":"","state":"found","found":["/a"],"blockers":[]})"));
+        broken.check();
+        QTRY_COMPARE(broken.state(), QString("offer"));
+        write(failing.filePath("answer.json"),
+              R"({"ok":false,"error":"could not stop the old timers: denied","state":"found","found":[],"blockers":[]})");
+        broken.accept();
+        QTRY_COMPARE(broken.state(), QString("failed"));
+        QVERIFY(broken.detail().contains("denied"));
+
+        // An answer that is not JSON is a failure too, never an offer.
+        QTemporaryDir garbage;
+        TakeoverSetup confused(fakeSyncwatch(garbage.path(), "not json"));
+        confused.check();
+        QTRY_COMPARE(confused.state(), QString("failed"));
+    }
+
+    void backendControlsCallTheCommands()
+    {
+        QTemporaryDir dir;
+        const QDateTime start = QDateTime::currentDateTime().addSecs(-600);
+        QDir(dir.path()).mkpath("Drive");
+        QVERIFY(write(dir.filePath("drive-sync.log"), successfulRun(start, 480).toUtf8()));
+        BackendPaths paths{dir.filePath("drive-sync.log"), dir.filePath("Drive"), dir.filePath("state"),
+                           dir.filePath("proc"), fakeSystemctl(dir.path(), start),
+                           QStandardPaths::findExecutable("find"), dir.filePath("app")};
+        paths.managed = true;
+        paths.self = fakeSyncwatch(dir.path(), "{}");
+        Backend backend(paths);
+        QTRY_COMPARE(backend.status(), QString("ok"));
+        QVERIFY(backend.managed());
+
+        backend.syncNow();
+        backend.pauseFor(60);
+        backend.pauseUntilTomorrow();
+        backend.pauseUntilResumed();
+        backend.resume();
+        QTRY_COMPARE(calls(dir.path()).size(), 5);
+        // The five run side by side, so they finish in any order.
+        QStringList made = calls(dir.path());
+        made.sort();
+        QCOMPARE(made, (QStringList{"syncwatch pause --json", "syncwatch pause --minutes 60 --json",
+                                    "syncwatch pause --until-tomorrow --json", "syncwatch resume --json",
+                                    "syncwatch sync --json"}));
+
+        // The pause shows as soon as the mark is there.
+        PauseMark mark;
+        mark.present = true;
+        // The mark keeps whole seconds.
+        mark.since = QDateTime::fromSecsSinceEpoch(QDateTime::currentSecsSinceEpoch(), QTimeZone::UTC);
+        mark.until = mark.since.addSecs(3600);
+        QVERIFY(writePause(pauseFilePath(paths.appState), mark));
+        backend.refresh();
+        QTRY_COMPARE(backend.status(), QString("paused"));
+        QVERIFY(backend.paused());
+        QCOMPARE(backend.pausedUntil(), mark.until);
+        QVERIFY(!backend.canSyncNow());
+    }
+
+    void backendSyncNowReportsAFailure()
+    {
+        QTemporaryDir dir;
+        const QDateTime start = QDateTime::currentDateTime().addSecs(-600);
+        QDir(dir.path()).mkpath("Drive");
+        QVERIFY(write(dir.filePath("drive-sync.log"), successfulRun(start, 480).toUtf8()));
+        BackendPaths paths{dir.filePath("drive-sync.log"), dir.filePath("Drive"), dir.filePath("state"),
+                           dir.filePath("proc"), fakeSystemctl(dir.path(), start),
+                           QStandardPaths::findExecutable("find"), dir.filePath("app")};
+        paths.self = fakeSyncwatch(dir.path(), "{}", true);
+        Backend backend(paths);
+        QTRY_COMPARE(backend.status(), QString("ok"));
+        backend.syncNow();
+        QTRY_VERIFY(backend.message().contains("denied"));
+    }
+    void undoStopsWhenAFileCannotGoBack()
+    {
+        QTemporaryDir dir;
+        OldSetup old = makeOldSetup(dir.path());
+        old.paths.systemctl = takeoverSystemctl(dir.path(), 0);
+        QString error;
+        QVERIFY(applyTakeover(old.paths, detectTakeover(old.paths, settledSnapshot()), QDateTime::currentDateTimeUtc(),
+                              &error));
+        const auto taken = filesUnder(old.home);
+
+        // Something in the way: refused before anything changes.
+        QVERIFY(write(old.home + "/.local/bin/drive-sync.sh", "someone else's\n"));
+        QVERIFY(!undoTakeover(old.paths, &error));
+        QVERIFY(error.contains("in the way"));
+        QVERIFY(QFile::remove(old.home + "/.local/bin/drive-sync.sh"));
+        QCOMPARE(filesUnder(old.home), taken);
+
+        // The scripts' folder cannot take them back: what already went back
+        // returns to the backup, and SyncWatch's timers start again.
+        QFile::remove(dir.filePath("calls.log"));
+        const QString bin = old.paths.binDir;
+        QFile::setPermissions(bin, QFile::ReadOwner | QFile::ExeOwner);
+        const auto restore = qScopeGuard([&] {
+            QFile::setPermissions(bin, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        });
+        QVERIFY(!undoTakeover(old.paths, &error));
+        QVERIFY2(error.contains("nothing was undone"), qPrintable(error));
+        QCOMPARE(filesUnder(old.home), taken);
+        // SyncWatch's timers come back as they were: enabled, then started.
+        QCOMPARE(systemctlCalls(dir.path()).mid(systemctlCalls(dir.path()).size() - 2),
+                 (QStringList{"systemctl --user enable drive-sync.timer drive-sync-watchdog.timer",
+                              "systemctl --user start drive-sync.timer drive-sync-watchdog.timer"}));
+        QVERIFY(!systemctlCalls(dir.path()).contains("systemctl --user enable --now drive-sync.timer drive-sync-vigia.timer"));
+    }
+
+    void detectBlocksWhatSystemdReadsDifferently()
+    {
+        const auto blockersAfter = [](const std::function<void(OldSetup &)> &change) {
+            QTemporaryDir dir;
+            OldSetup old = makeOldSetup(dir.path());
+            change(old);
+            return detectTakeover(old.paths, settledSnapshot()).blockers;
+        };
+        // %h is the home for systemd, two literal characters for SyncWatch.
+        QVERIFY(blockersAfter([](OldSetup &o) {
+                    write(o.paths.userUnits + "/drive-sync.service",
+                          oldServiceText(o.home).replace(o.home + "/Drive", "%h/Drive").toUtf8());
+                }).contains("unreadableUnit"));
+        QVERIFY(blockersAfter([](OldSetup &o) {
+                    write(o.paths.userUnits + "/drive-sync.service",
+                          oldServiceText(o.home).replace("--drive-skip-gdocs", "'--drive-skip-gdocs'").toUtf8());
+                }).contains("unreadableUnit"));
+        QCOMPARE(blockersAfter([](OldSetup &o) { QDir().mkpath(o.paths.userUnits + "/drive-sync.service.d"); }),
+                 QStringList{"dropIn"});
+        QCOMPARE(blockersAfter([](OldSetup &o) { QDir().mkpath(o.paths.systemUserUnits + "/drive-sync.timer.d"); }),
+                 QStringList{"dropIn"});
+        QCOMPARE(blockersAfter([](OldSetup &o) { QFile::remove(o.paths.userUnits + "/drive-sync.timer"); }),
+                 QStringList{"unreadableUnit"});
+        QCOMPARE(blockersAfter([](OldSetup &o) {
+                     write(o.paths.userUnits + "/drive-sync-vigia.service", "[Service]\nType=oneshot\nExecStart=/x/other\n");
+                 }),
+                 QStringList{"unknownDirective:drive-sync-vigia.service"});
+        QCOMPARE(blockersAfter([](OldSetup &o) {
+                     write(o.paths.userUnits + "/drive-sync-vigia.timer", "[Timer]\nOnStartupSec=10min\nOnUnitActiveSec=4h\n");
+                 }),
+                 QStringList{"differentValue:OnUnitActiveSec"});
+    }
+
+    void pauseOnlyCountsWhenManaged()
+    {
+        // After an undo the old units sync again: a leftover mark must not
+        // say "paused" or hide a failure.
+        const QDateTime now(QDate(2026, 11, 7), QTime(16, 0, 0), QTimeZone::UTC);
+        SnapshotSources src = idleSources(successfulRun(now.toLocalTime().addSecs(-3600), 480), now);
+        src.pause.present = true;
+        src.managed = false;
+        const Snapshot snap = buildSnapshot(src);
+        QVERIFY(!snap.paused);
+        QVERIFY(snap.summary.status != "paused");
+        QVERIFY(snap.canSyncNow);
+
+        // An ended pause no longer stops "sync now".
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        PauseMark mark;
+        mark.present = true;
+        mark.until = QDateTime::currentDateTimeUtc().addSecs(-60);
+        QVERIFY(writePause(pauseFilePath(paths.appState), mark));
+        QString out, err;
+        QTextStream o(&out), e(&err);
+        QCOMPARE(runSyncCommand({}, paths, o, e), 0);
+    }
+
+    void conditionFailsLikeSystemdOnCrashOr255()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        SyncConfig config = oldUnitConfig();
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        config.runOnlyWhen = "exit 255";
+        QCOMPARE(runConditionCommand(paths, config, now), 255);
+        config.runOnlyWhen = "kill -9 $$";
+        QCOMPARE(runConditionCommand(paths, config, now), 255);
+        config.runOnlyWhen = "exit 3";
+        QCOMPARE(runConditionCommand(paths, config, now), 1);
+    }
+
+    void refusedRunShowsAsAFailedRunWithItsCause()
+    {
+        // SyncWatch's refusal is a CRITICAL line outside any run: the parser
+        // makes it a failed run, so the window and the bar show its reason.
+        const QDateTime start = QDateTime::currentDateTime().addSecs(-3600);
+        QString log = successfulRun(start, 480);
+        log += line(start.addSecs(900), "CRITICAL", "SyncWatch did not start rclone: filters.txt.md5 is missing");
+        const auto runs = SyncLog::parse(log);
+        QCOMPARE(runs.size(), 2);
+        QCOMPARE(runs.last().outcome, QString("failed"));
+        QVERIFY(runs.last().causeDetail.contains("filters.txt.md5 is missing"));
+        const Snapshot snap = buildSnapshot(idleSources(log, QDateTime::currentDateTimeUtc()));
+        QCOMPARE(snap.summary.status, QString("failed"));
+        QVERIFY(snap.summary.causeDetail.contains("filters.txt.md5"));
+    }
+
+    void notifyNamesOnlyTheRunThatJustEnded()
+    {
+        // An old failed run is not the cause of this one.
+        QTemporaryDir dir;
+        BackendPaths paths = controlPaths(dir.path(), true);
+        QVERIFY(write(paths.log, failedRun(QDateTime::currentDateTime().addSecs(-3600)).toUtf8()));
+        paths.systemctl = dir.filePath("systemctl");
+        QVERIFY(write(paths.systemctl, QString("#!/bin/sh\necho @%1\n")
+                                           .arg(QDateTime::currentSecsSinceEpoch() - 30).toUtf8()));
+        QFile::setPermissions(paths.systemctl, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        QCOMPARE(runNotifyCommand("exit-code", paths, fakeNotifier(dir.path()), QDateTime::currentDateTimeUtc()), 0);
+        const QString sent = notifications(dir.path()).value(0);
+        QVERIFY2(sent.contains("No detail"), qPrintable(sent));
+        QVERIFY(!sent.contains("listings"));
+    }
+
+    void reminderDoesNotBringAPauseBack()
+    {
+        // A resume while notify-send shows the reminder wins.
+        QTemporaryDir dir;
+        BackendPaths paths = controlPaths(dir.path(), true);
+        paths.systemctl = watchdogSystemctl(dir.path(), "loaded", "active", "enabled");
+        NotifierPaths tools = fakeNotifier(dir.path());
+        const QString mark = pauseFilePath(paths.appState);
+        QVERIFY(write(tools.notifySend, QString("#!/bin/sh\nrm -f '%1'\necho 9\n").arg(mark).toUtf8()));
+        PauseMark pause;
+        pause.present = true;
+        pause.since = QDateTime::currentDateTimeUtc().addSecs(-2 * 86400);
+        QVERIFY(writePause(mark, pause));
+        SyncConfig config = oldUnitConfig();
+        config.runOnlyWhen.clear();
+        QCOMPARE(runWatchdogCommand(paths, config, tools, QDateTime::currentDateTimeUtc()), 0);
+        QVERIFY(!readPause(mark).present);
+    }
+
+    void watchdogReportsABrokenConfig()
+    {
+        QTemporaryDir dir;
+        BackendPaths paths = controlPaths(dir.path(), true);
+        paths.systemctl = watchdogSystemctl(dir.path(), "loaded", "active", "enabled");
+        QCOMPARE(runWatchdogCommand(paths, SyncConfig(), fakeNotifier(dir.path()), QDateTime::currentDateTimeUtc(),
+                                    "config.json is not a JSON object"),
+                 0);
+        QVERIFY(notifications(dir.path()).value(0).contains("config cannot be read"));
+    }
+
+    void backendFollowsATakeoverWithoutARestart()
+    {
+        QTemporaryDir dir;
+        const QDateTime start = QDateTime::currentDateTime().addSecs(-600);
+        QDir(dir.path()).mkpath("Drive");
+        QVERIFY(write(dir.filePath("drive-sync.log"), successfulRun(start, 480).toUtf8()));
+        BackendPaths paths{dir.filePath("drive-sync.log"), dir.filePath("Drive"), dir.filePath("state"),
+                           dir.filePath("proc"), fakeSystemctl(dir.path(), start),
+                           QStandardPaths::findExecutable("find"), dir.filePath("app")};
+        paths.config = dir.filePath("config/config.json");
+        Backend backend(paths);
+        QTRY_COMPARE(backend.status(), QString("ok"));
+        QVERIFY(!backend.managed());
+
+        SyncConfig config = oldUnitConfig();
+        config.logFile = dir.filePath("drive-sync.log");
+        config.localPath = dir.filePath("Drive");
+        QVERIFY(saveSyncConfig(paths.config, config, nullptr));
+        backend.reloadConfig();
+        QTRY_VERIFY(backend.managed());
+    }
+    void takeoverWorksWithoutTheOldWatchdog()
+    {
+        QTemporaryDir dir;
+        OldSetup old = makeOldSetup(dir.path());
+        QVERIFY(QFile::remove(old.paths.userUnits + "/drive-sync-vigia.service"));
+        QVERIFY(QFile::remove(old.paths.userUnits + "/drive-sync-vigia.timer"));
+        old.paths.systemctl = takeoverSystemctl(dir.path(), 0);
+        QString error;
+        QVERIFY2(applyTakeover(old.paths, detectTakeover(old.paths, settledSnapshot()), QDateTime::currentDateTimeUtc(),
+                               &error),
+                 qPrintable(error));
+        for (const QString &call : systemctlCalls(dir.path()))
+            QVERIFY2(!call.contains("vigia"), qPrintable(call));
+    }
+    void detectBlocksPathsThatWouldMoveFirst()
+    {
+        QTemporaryDir dir;
+        OldSetup old = makeOldSetup(dir.path());
+        // The log inside the old state folder would leave with it.
+        write(old.paths.userUnits + "/drive-sync.service",
+              oldServiceText(old.home)
+                  .replace(old.home + "/.local/state/drive-sync.log", old.paths.oldStateDir + "/rclone.log")
+                  .toUtf8());
+        QCOMPARE(detectTakeover(old.paths, settledSnapshot()).blockers, QStringList{"pathInsideMoved"});
+    }
+
+    void undoRefusesAfterATakeoverThatStoppedHalfway()
+    {
+        QTemporaryDir dir;
+        OldSetup old = makeOldSetup(dir.path());
+        const QString units = old.paths.userUnits;
+        old.paths.systemctl = takeoverSystemctl(dir.path(), 0, "inactive", "/somewhere/else",
+                                                QString("chmod a-w '%1'").arg(units));
+        const auto restore = qScopeGuard([&] {
+            QFile::setPermissions(units, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        });
+        QString error;
+        QVERIFY(!applyTakeover(old.paths, detectTakeover(old.paths, settledSnapshot()), QDateTime::currentDateTimeUtc(),
+                               &error));
+        QVERIFY(!undoTakeover(old.paths, &error));
+        QVERIFY2(error.contains("by hand"), qPrintable(error));
+    }
+
+    void undoRefusedForARunChangesNothing()
+    {
+        QTemporaryDir dir;
+        OldSetup old = makeOldSetup(dir.path());
+        old.paths.systemctl = takeoverSystemctl(dir.path(), 0);
+        QString error;
+        QVERIFY(applyTakeover(old.paths, detectTakeover(old.paths, settledSnapshot()), QDateTime::currentDateTimeUtc(),
+                              &error));
+        const auto taken = filesUnder(old.home);
+        QFile::remove(dir.filePath("calls.log"));
+        old.paths.systemctl = takeoverSystemctl(dir.path(), 0, "active");
+        QVERIFY(!undoTakeover(old.paths, &error));
+        QVERIFY(error.contains("run"));
+        QCOMPARE(filesUnder(old.home), taken);
+        QCOMPARE(systemctlCalls(dir.path()), QStringList{"systemctl --user is-active drive-sync.service"});
     }
 };
 
