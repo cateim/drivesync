@@ -11,9 +11,12 @@ from the `drive-sync.timer` user unit every 15 minutes, in a window, on the
 Omarchy bar (its widget ships in the package) and through
 `syncwatch status --json`. It reads the rclone log, asks systemd, and looks
 for conflict copies. It never starts a resync and never touches the synced
-files; it writes only its own state (`~/.local/state/syncwatch/`), the link
-to its bar widget, and, when the user accepts, the bar layout through
-`omarchy plugin`. The bar widget can ask systemd for one normal run. The plan for growing it into the
+files; it writes its own state (`~/.local/state/syncwatch/`), the link to its
+bar widget, and, when the user accepts, the bar layout through
+`omarchy plugin`. Since step 2 it can take over a drive-sync made by
+`drive-sync.sh` (`syncwatch takeover`): its packaged user units then run the
+same rclone command from `~/.config/syncwatch/config.json`, and the window,
+the bar and the command line can sync now, pause and resume. The plan for growing it into the
 owner of drive-sync is `docs/superpowers/specs/2026-11-07-drive-sync-manager-design.md`; `docs/` is git-ignored,
 so that file exists only in the maintainer's working copy. The `drive-sync` scripts themselves live
 in the DIY repository (`assets/omarchy/home/.local/bin/drive-sync.sh` and
@@ -36,12 +39,18 @@ syncwatch.pro           qmake project
 bin/build               qmake6 + make into build/syncwatch
 bin/test                builds and runs build/tests/syncwatch_tests offscreen
 bin/install             bin/build, then makepkg -fsi with BUILDDIR/PKGDEST under build/
-src/main.cpp            "status" runs headless; otherwise the window with translator, theme, backend, pluginSetup
+src/main.cpp            commands run headless (status, sync, pause, resume, takeover, and run-condition, run, notify, watchdog for the units); otherwise the window
 src/synclog.{h,cpp}     pure parser of the rclone bisync log into SyncRun records
 src/snapshot.{h,cpp}    buildSnapshot(): the one place the state is decided; tone; the JSON contract
 src/backend.{h,cpp}     the window's state: log watch, systemctl calls, conflict scan, headline rules (summarize)
 src/conflictcache.{h,cpp}  conflict count shared through ~/.local/state/syncwatch/conflicts.json
 src/statuscommand.{h,cpp}  `syncwatch status [--json]`: same sources, read once, synchronously
+src/syncconfig.{h,cpp}  the config a takeover writes; rclone arguments; filtersUsable (the md5 check)
+src/pausestate.{h,cpp}  the pause mark (~/.local/state/syncwatch/paused.json) and "next 08:00"
+src/controlcommands.{h,cpp}  sync, pause, resume, run-condition, run (execs rclone); runProcess
+src/notifier.{h,cpp}    notify (ExecStopPost) and watchdog: the port of drive-sync-aviso
+src/takeover.{h,cpp}    detect, apply with rollback, undo; `syncwatch takeover`
+src/takeoversetup.{h,cpp}  the window's side of a takeover, through a child process
 src/pluginsetup.{h,cpp} links the shipped bar widget and enables it through `omarchy plugin`
 src/theme.{h,cpp}       Omarchy accent and Hyprland rounding (from the skill template)
 src/translator.{h,cpp}  Omarchy language, JSON catalogs (from the skill template)
@@ -51,12 +60,15 @@ src/RunsPage.qml        run list; RunDetail.qml shows the picked run
 src/ConflictsPage.qml   conflict copies
 src/HelpOverlay.qml     "?" overlay
 src/BarBanner.qml       offer to put the widget on the bar (B), or why it could not
+src/ControlsRow.qml     sync now (S), pause (P), resume (U)
+src/PauseMenu.qml       the three pause lengths (1, 2, 3)
+src/TakeoverBanner.qml  offer to take over (T), or what blocks it; TakeoverDialog.qml confirms
 src/format.js           relative times, durations, sizes
 src/i18n/*.json         en (plural forms only) and pt-BR
 tests/                  Qt Test suite
 plugin/                 Omarchy bar widget (id syncwatch), installed to /usr/share/syncwatch/omarchy-plugin; reads `syncwatch status --json`
 docs/superpowers/       git-ignored, local only: design (specs/) and step plans (plans/)
-pkgbuild/               PKGBUILD, .desktop
+pkgbuild/               PKGBUILD, .desktop, units/ (drive-sync and drive-sync-watchdog user units, /usr/lib/systemd/user)
 assets/icons/           launcher icon, installed by the PKGBUILD
 assets/images/          README pictures: real screens that show no file names; window-run-details.png is the offscreen harness over a made-up log
 ```
@@ -65,11 +77,12 @@ assets/images/          README pictures: real screens that show no file names; w
 
 ```sh
 bin/build            # about 30 s from clean
-bin/test             # 48 cases, about 2 s to run
+bin/test             # 103 cases, about 5 s (one runs real rclone on temp folders)
 bin/install          # needs sudo (pacman -U); run it in a real terminal
 makepkg -f           # from pkgbuild/, with BUILDDIR and PKGDEST set as in bin/install, to check packaging without sudo
 build/syncwatch status --json   # the state as the bar sees it (0.13 s with a fresh conflict cache)
-(cd plugin && node --test tests/*.test.mjs)   # bar widget, 16 cases; the glob is required on Node 22
+(cd plugin && node --test tests/*.test.mjs)   # bar widget, 18 cases; the glob is required on Node 22
+build/syncwatch takeover --check              # read-only: what a takeover would move, or what blocks it
 omarchy plugin validate plugin                # needs the folder path, not the plugin id
 ```
 
@@ -81,7 +94,7 @@ all show what it decides. It finds the running run, the last success, the
 last run, `failingSince`, `canSyncNow` and the `tone` (`ok`, `busy`,
 `warning`, `error`), and calls `Backend::summarize`, which picks one
 headline, most urgent first:
-`unavailable` (systemctl failed), `notLoaded`, `running`, `resync`, `noLog`,
+`unavailable` (systemctl failed), `notLoaded`, `running`, `resync`, `paused`, `noLog`,
 `failed`, `interrupted`, `skipped` (ExecCondition: emergency home), `timerOff`,
 `stale` (no success for 45 min), `noDrive`, `conflicts`, `ok`. What the
 headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
@@ -94,9 +107,13 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
   `ExecMainStartTimestamp`: `drive-sync.sh resync` runs rclone outside the unit.
 - Failure causes match `drive-sync-aviso`: lost listings, out of sync, else the
   first error that is not the generic "Bisync aborted" line.
-- The JSON (`snapshotToJson`, version 1) always has the same 17 keys; times
-  are Unix seconds, `0` when unknown. The widget rejects any other version, so
-  a change to the keys means a new version and a widget that reads it.
+- The JSON (`snapshotToJson`, version 2) always has the same 20 keys (version
+  1 plus `managed`, `paused`, `pausedUntil`); times are Unix seconds, `0` when
+  unknown. The widget rejects any other version, so a change to the keys means
+  a new version and a widget that reads it, installed together.
+- A pause is a mark file, not a stopped timer: `run-condition` skips each tick
+  while it holds and clears it at the first tick after its end, so "paused"
+  lasts until a run really starts and survives a reboot.
 
 ## Conventions
 
@@ -111,6 +128,20 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
 - No em or en dashes anywhere (house rule of the owner).
 
 ## Gotchas
+
+- **A bisync run with the filters' `.md5` missing or stale destroys its base.**
+  Tried with rclone 1.75 on 2026-11-08: the run stops with a critical error and
+  renames the listings to `-err`, and from then on even the right filters fail
+  until a resync. So `syncwatch run` checks `filtersUsable` before it execs
+  rclone, the takeover copies the filters with their `.md5`, and no byte of the
+  filters (comments included) may change outside a flow that resyncs.
+- **A user unit beats a packaged one of the same name.** The package ships
+  `drive-sync.service` and `.timer`; they stay inert while the old ones exist in
+  `~/.config/systemd/user`, which is why the takeover moves those aside and then
+  checks `FragmentPath`. Rollback and undo disable one set before enabling the
+  other, so there is never a second scheduler.
+- `unix` is a predefined macro with GCC on Linux: a variable or lambda named
+  `unix` fails to compile.
 
 - **Never use local-time `QDateTime` in hot paths.** On this machine each
   local-time conversion or comparison costs about 0.2 ms (Qt resolves the
