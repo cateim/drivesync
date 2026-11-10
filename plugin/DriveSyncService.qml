@@ -3,8 +3,9 @@ import Quickshell
 import Quickshell.Io
 import "DriveSyncModel.js" as Model
 
-// Polls `syncwatch status --json` and runs the widget's actions. Read-only
-// except for syncNow(), which asks systemd for one drive-sync.service run.
+// Polls `syncwatch status --json` and runs the widget's actions through
+// `syncwatch` too (sync, pause, resume), so the widget never decides what a
+// command may do: the app refuses what does not make sense.
 Item {
   id: root
 
@@ -45,6 +46,18 @@ Item {
     actionError = ""
     starting = true
     startProcess.running = true
+  }
+
+  // One hour on the bar: a pause with no end is never one key away. The
+  // window offers the other lengths.
+  function togglePause() {
+    if (controlProcess.running) return
+    var command = Model.canResume(status) ? ["syncwatch", "resume"]
+                : Model.canPause(status) ? ["syncwatch", "pause", "--minutes", "60"] : null
+    if (!command) return
+    actionError = ""
+    controlProcess.command = command
+    controlProcess.running = true
   }
 
   // The SyncWatch window: focused when open, started otherwise.
@@ -103,16 +116,30 @@ Item {
 
   Process {
     id: startProcess
-    // --no-block: return as soon as the job is queued; the run takes minutes.
-    command: ["systemctl", "--user", "start", "--no-block", "drive-sync.service"]
+    // Queues one run and returns at once; the run takes minutes.
+    command: ["syncwatch", "sync"]
     stderr: StdioCollector { id: startErr; waitForEnd: true }
     onExited: function(exitCode) {
       if (exitCode !== 0) {
         root.starting = false
-        root.actionError = Model.cleanText(startErr.text) || ("systemctl exit " + exitCode)
-        console.warn("[syncwatch] systemctl start failed: " + root.actionError)
+        root.actionError = Model.cleanText(startErr.text) || ("syncwatch sync exit " + exitCode)
+        console.warn("[syncwatch] syncwatch sync failed: " + root.actionError)
       }
       settle.restart()
+    }
+  }
+
+  // Pause or resume; the fixed lists in togglePause() are its only commands
+  // ["syncwatch", "pause", "--minutes", "60"] and ["syncwatch", "resume"].
+  Process {
+    id: controlProcess
+    stderr: StdioCollector { id: controlErr; waitForEnd: true }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        root.actionError = Model.cleanText(controlErr.text) || ("syncwatch exit " + exitCode)
+        console.warn("[syncwatch] " + root.actionError)
+      }
+      root.refresh()
     }
   }
 

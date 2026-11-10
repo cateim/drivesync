@@ -8,7 +8,7 @@ var MAX_ERROR_LENGTH = 200
 var EPOCH_MAX = 99999999999
 
 // Every status the app can print (Backend::summarize), and its tones.
-var STATUSES = ["ok", "running", "resync", "failed", "interrupted", "skipped", "timerOff",
+var STATUSES = ["ok", "running", "resync", "paused", "failed", "interrupted", "skipped", "timerOff",
                 "stale", "noDrive", "noLog", "notLoaded", "unavailable", "conflicts"]
 var TONES = ["ok", "busy", "warning", "error"]
 var OUTCOMES = ["success", "failed", "interrupted"]
@@ -18,6 +18,7 @@ var GLYPHS = {
   ok: 0xF0160,        // cloud-check
   syncing: 0xF063F,   // cloud-sync
   resync: 0xF063F,    // cloud-sync
+  paused: 0xF18F6,    // weather-cloudy-clock: no cloud-pause in the font
   warning: 0xF09E0,   // cloud-alert
   failing: 0xF09E0,   // cloud-alert
   broken: 0xF09E0,    // cloud-alert
@@ -29,7 +30,7 @@ var URGENT_STATES = ["failing", "broken", "timerOff"]
 var DIMMED_STATES = ["syncing", "resync", "unknown"]
 
 // Actions in the panel, in cursor order.
-var ACTIONS = ["sync", "log", "folder"]
+var ACTIONS = ["sync", "pause", "log", "folder"]
 
 function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -59,7 +60,7 @@ function cleanText(value) {
 }
 
 // What `syncwatch status --json` printed, checked field by field. Output that
-// is not version 1 of the contract, or has no clock, is not a snapshot.
+// is not version 2 of the contract, or has no clock, is not a snapshot.
 function parseSnapshot(raw) {
   var data = null
   try {
@@ -67,7 +68,7 @@ function parseSnapshot(raw) {
   } catch (e) {
     data = null
   }
-  var ok = isObject(data) && data.version === 1 && toEpoch(data.now) > 0
+  var ok = isObject(data) && data.version === 2 && toEpoch(data.now) > 0
   var d = ok ? data : {}
   var lastRun = isObject(d.lastRun) ? d.lastRun : {}
   var currentRun = isObject(d.currentRun) ? d.currentRun : {}
@@ -98,7 +99,10 @@ function parseSnapshot(raw) {
     nextRun: toEpoch(d.nextRun),
     failingSince: toEpoch(d.failingSince),
     conflicts: typeof d.conflicts === "number" && isFinite(d.conflicts) && d.conflicts > 0
-               ? Math.min(Math.floor(d.conflicts), 999999) : 0
+               ? Math.min(Math.floor(d.conflicts), 999999) : 0,
+    managed: d.managed === true,
+    paused: d.paused === true,
+    pausedUntil: toEpoch(d.pausedUntil)
   }
 }
 
@@ -106,6 +110,7 @@ function parseSnapshot(raw) {
 function barState(snapshot) {
   if (!snapshot || !snapshot.ok) return "unknown"
   if (snapshot.status === "timerOff") return "timerOff"
+  if (snapshot.status === "paused") return "paused"
   switch (snapshot.tone) {
     case "ok": return "ok"
     case "busy": return snapshot.status === "resync" ? "resync" : "syncing"
@@ -118,6 +123,15 @@ function barState(snapshot) {
 // The app knows whether a manual run makes sense; the widget just asks.
 function canSyncNow(snapshot) {
   return !!snapshot && snapshot.ok && snapshot.canSyncNow
+}
+
+// A pause needs SyncWatch's own units: the old ones never look at the mark.
+function canPause(snapshot) {
+  return !!snapshot && snapshot.ok && snapshot.managed && !snapshot.paused && !snapshot.resync
+}
+
+function canResume(snapshot) {
+  return !!snapshot && snapshot.ok && snapshot.paused
 }
 
 // Seconds the last finished run took, 0 when it did not finish or is unknown.

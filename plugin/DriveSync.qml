@@ -39,6 +39,10 @@ Panel {
       case "ok": return strings.t("status.ok").arg(clock(s.lastSuccess))
       case "stale": return strings.t("status.stale").arg(ago(s.lastSuccess))
       case "failed": return strings.t("status.failed").arg(clock(s.failingSince || s.lastRunStart))
+      case "paused":
+        if (!s.pausedUntil) return strings.t("status.paused")
+        // The mark holds until the next tick clears it.
+        return s.pausedUntil <= s.now ? strings.t("status.pausedEnding") : strings.t("status.pausedUntil").arg(clock(s.pausedUntil))
       default: return strings.t("status." + s.status)
     }
   }
@@ -82,6 +86,7 @@ Panel {
 
   function runAction(name) {
     if (name === "sync") sync.syncNow()
+    else if (name === "pause") sync.togglePause()
     else if (name === "log") { sync.openHistory(); close() }
     else if (name === "folder") { sync.openFolder(); close() }
   }
@@ -114,6 +119,11 @@ Panel {
       var accepted = root.canSync
       sync.syncNow()
       return accepted ? "started" : "busy"
+    }
+    function togglePause(): string {
+      var answer = Model.canResume(root.status) ? "resumed" : Model.canPause(root.status) ? "paused" : "unavailable"
+      sync.togglePause()
+      return answer
     }
     // Answers scripts, so it stays English: the state name, not the headline.
     function status(): string { return root.syncState }
@@ -158,6 +168,7 @@ Panel {
       onTextKey: function(t) {
         var key = String(t).toLowerCase()
         if (key === "s") root.runAction("sync")
+        else if (key === "p") root.runAction("pause")
         else if (key === "l") root.runAction("log")
         else if (key === "o") root.runAction("folder")
         else if (key === "r") sync.refresh()
@@ -235,9 +246,20 @@ Panel {
             onClicked: root.runAction("sync")
           }
           PanelActionButton {
+            readonly property bool resumes: Model.canResume(root.status)
+            iconText: String.fromCodePoint(resumes ? 0xF040A : 0xF03E4)  // play, pause
+            tooltipText: resumes ? strings.t("action.resume")
+                       : Model.canPause(root.status) ? strings.t("action.pause") : strings.t("action.pauseUnavailable")
+            enabled: resumes || Model.canPause(root.status)
+            hasCursor: root.cursorActive && root.actionIndex === 1
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.runAction("pause")
+          }
+          PanelActionButton {
             iconText: String.fromCodePoint(0xF021A)
             tooltipText: strings.t("action.syncwatch")
-            hasCursor: root.cursorActive && root.actionIndex === 1
+            hasCursor: root.cursorActive && root.actionIndex === 2
             foreground: root.foreground
             fontFamily: root.fontFamily
             onClicked: root.runAction("log")
@@ -245,7 +267,7 @@ Panel {
           PanelActionButton {
             iconText: String.fromCodePoint(0xF0770)
             tooltipText: strings.t("action.folder")
-            hasCursor: root.cursorActive && root.actionIndex === 2
+            hasCursor: root.cursorActive && root.actionIndex === 3
             foreground: root.foreground
             fontFamily: root.fontFamily
             onClicked: root.runAction("folder")

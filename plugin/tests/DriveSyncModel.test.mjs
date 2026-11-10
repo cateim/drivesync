@@ -11,17 +11,18 @@ const source = readFileSync(new URL("../DriveSyncModel.js", import.meta.url), "u
 const model = {}
 vm.runInNewContext(source.replace(/^\.pragma library\s*$/m, ""), model)
 
-const STATUSES = ["ok", "running", "resync", "failed", "interrupted", "skipped", "timerOff",
+const STATUSES = ["ok", "running", "resync", "paused", "failed", "interrupted", "skipped", "timerOff",
                   "stale", "noDrive", "noLog", "notLoaded", "unavailable", "conflicts"]
 
-// What `syncwatch status --json` prints with drive-sync in sync (contract version 1).
+// What `syncwatch status --json` prints with drive-sync in sync (contract version 2).
 const HEALTHY = {
-  version: 1, now: 1794076940, status: "ok", tone: "ok",
+  version: 2, now: 1794076940, status: "ok", tone: "ok",
   causeKind: "", causeDetail: "", warnings: [],
   running: false, resync: false, canSyncNow: true,
   lastSuccess: 1794076584, lastRun: { start: 1794076098, end: 1794076584, outcome: "success" },
   currentRun: { start: 0, phase: "" }, nextRun: 1794076998,
-  failingSince: 0, typicalSeconds: 480, conflicts: 0
+  failingSince: 0, typicalSeconds: 480, conflicts: 0,
+  managed: true, paused: false, pausedUntil: 0
 }
 const json = (overrides = {}) => JSON.stringify({ ...HEALTHY, ...overrides })
 const snapshot = (overrides = {}) => model.parseSnapshot(json(overrides))
@@ -41,9 +42,11 @@ test("parseSnapshot reads a healthy snapshot", () => {
   assert.equal(s.causeDetail, "")
 })
 
-test("parseSnapshot rejects non-JSON, version 2 and a missing clock", () => {
+test("parseSnapshot rejects non-JSON, other versions and a missing clock", () => {
   assert.equal(model.parseSnapshot("now=1794076940").ok, false)
-  assert.equal(model.parseSnapshot(json({ version: 2 })).ok, false)
+  // Version 1 has no pause: an older syncwatch must not look like one that is never paused.
+  assert.equal(model.parseSnapshot(json({ version: 1 })).ok, false)
+  assert.equal(model.parseSnapshot(json({ version: 3 })).ok, false)
   assert.equal(model.parseSnapshot(json({ now: 0 })).ok, false)
   assert.equal(model.parseSnapshot("[1, 2]").ok, false)
   assert.equal(model.parseSnapshot(null).ok, false)
@@ -78,12 +81,12 @@ test("causeDetail keeps markup inert on one bounded line", () => {
 
 test("barState maps every status", () => {
   const expected = {
-    ok: "ok", running: "syncing", resync: "resync", failed: "failing",
+    ok: "ok", running: "syncing", resync: "resync", paused: "paused", failed: "failing",
     interrupted: "warning", skipped: "warning", stale: "warning", conflicts: "warning",
     timerOff: "timerOff", noDrive: "broken", noLog: "broken", notLoaded: "broken", unavailable: "broken"
   }
   const tones = {
-    ok: "ok", running: "busy", resync: "busy", failed: "error", interrupted: "warning",
+    ok: "ok", running: "busy", resync: "busy", paused: "warning", failed: "error", interrupted: "warning",
     skipped: "warning", stale: "warning", conflicts: "warning", timerOff: "error",
     noDrive: "error", noLog: "error", notLoaded: "error", unavailable: "error"
   }
@@ -155,8 +158,9 @@ test("ageParts picks the coarsest readable unit", () => {
 })
 
 test("the action cursor and clampInt", () => {
-  assert.equal(model.stepAction(0, -1), 2)
-  assert.equal(model.stepAction(2, 1), 0)
+  assert.deepEqual([...model.ACTIONS], ["sync", "pause", "log", "folder"])
+  assert.equal(model.stepAction(0, -1), 3)
+  assert.equal(model.stepAction(3, 1), 0)
   assert.equal(model.clampInt("abc", 30, 10, 600), 30)
   assert.equal(model.clampInt("5", 30, 10, 600), 10)
 })
@@ -197,4 +201,33 @@ test("every key used in QML exists in en.json and pt-BR.json", () => {
       assert.ok(entry && entry.one && entry.other, `age.${unit} needs one and other`)
     }
   }
+})
+
+test("pause and resume follow the app", () => {
+  const paused = snapshot({ status: "paused", tone: "warning", paused: true, pausedUntil: 1794080540, canSyncNow: false })
+  assert.equal(paused.paused, true)
+  assert.equal(paused.pausedUntil, 1794080540)
+  assert.equal(model.barState(paused), "paused")
+  assert.equal(model.glyph("paused").codePointAt(0), 0xF18F6)
+  assert.equal(model.isUrgent("paused"), false)
+  assert.equal(model.canResume(paused), true)
+  assert.equal(model.canPause(paused), false)
+  assert.equal(model.canSyncNow(paused), false)
+
+  assert.equal(model.canPause(snapshot()), true)
+  assert.equal(model.canResume(snapshot()), false)
+  // The old units never look at the mark: no pause before a takeover.
+  assert.equal(model.canPause(snapshot({ managed: false })), false)
+  assert.equal(model.canPause(snapshot({ resync: true })), false)
+  assert.equal(model.canPause(model.parseSnapshot("")), false)
+  assert.equal(snapshot({ paused: "yes", pausedUntil: "soon" }).paused, false)
+  assert.equal(snapshot({ pausedUntil: "soon" }).pausedUntil, 0)
+})
+
+test("the widget changes drive-sync only through syncwatch", () => {
+  const qml = readFileSync(new URL("../DriveSyncService.qml", import.meta.url), "utf8")
+  assert.match(qml, /\["syncwatch", "sync"\]/)
+  assert.match(qml, /\["syncwatch", "pause", "--minutes", "60"\]/)
+  assert.match(qml, /\["syncwatch", "resume"\]/)
+  assert.doesNotMatch(qml, /"systemctl"/)
 })
