@@ -1,0 +1,10 @@
+# Shipped by SyncWatch; enabled by the takeover.
+[Unit]
+Description=drive-sync: one run every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target

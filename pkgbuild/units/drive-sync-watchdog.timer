@@ -1,0 +1,13 @@
+# Shipped by SyncWatch; enabled by the takeover.
+[Unit]
+Description=drive-sync: check every hour that runs still happen
+
+[Timer]
+# Counts from the start of the user's systemd, not from boot: at login both
+# timers start together, and the watchdog must not look before the sync timer
+# is up.
+OnStartupSec=10min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target

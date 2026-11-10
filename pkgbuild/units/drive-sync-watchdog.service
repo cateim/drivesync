@@ -1,0 +1,9 @@
+# Shipped by SyncWatch. Covers what the notification after each run cannot
+# see: a timer that is off or not enabled, or a unit that does not load,
+# because then no run happens at all.
+[Unit]
+Description=drive-sync: check that runs still happen
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/syncwatch watchdog
