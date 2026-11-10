@@ -9,6 +9,7 @@
 #include <QVariantList>
 #include <QVariantMap>
 
+#include "pausestate.h"
 #include "synclog.h"
 
 // One state of drive-sync, decided in one place. The window, the
@@ -41,6 +42,7 @@ struct SyncInputs {
     QString timerActive;     // drive-sync.timer ActiveState
     QString timerFileState;  // UnitFileState: "enabled" starts it on boot
     bool resyncRunning = false;
+    bool paused = false;     // a pause mark holds the runs
     bool running = false;    // a run is writing to the log right now
     QString lastOutcome;     // newest finished run in the log
     QDateTime lastStart;
@@ -69,6 +71,8 @@ struct SnapshotSources {
     bool resyncRunning = false;
     bool driveFound = true;
     int conflicts = 0;
+    bool managed = false;             // SyncWatch's own units run drive-sync
+    PauseMark pause;
     QDateTime now;                    // UTC
 };
 
@@ -87,10 +91,14 @@ struct Snapshot {
     QDateTime failingSince;           // first run of the current failure, only when failed
     int typicalSeconds = 0;           // median of the last 10 successful non-resync runs
     int conflicts = 0;
+    bool managed = false;
+    bool paused = false;
+    QDateTime pausedUntil;            // invalid while paused means until the user resumes
 };
 
 Snapshot buildSnapshot(const SnapshotSources &src);
-// Version 1 of the "syncwatch status --json" contract. Every key is always
+// Version 2 of the "syncwatch status --json" contract (version 1 plus
+// managed, paused and pausedUntil). Every key is always
 // present; times are Unix seconds, 0 when unknown. The bar widget reads it.
 QJsonObject snapshotToJson(const Snapshot &s, const QDateTime &nextRun, const QDateTime &now);
 // "ok" | "busy" | "warning" | "error": how urgent a headline is.

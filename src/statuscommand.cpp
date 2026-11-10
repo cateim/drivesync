@@ -83,6 +83,9 @@ SnapshotSources gatherSources(const BackendPaths &paths, const QDateTime &now, i
     src.resyncRunning = Backend::resyncRunning(paths.stateDir, paths.proc);
     src.driveFound = QFileInfo(paths.drive).isDir();
     src.conflicts = src.driveFound ? countConflicts(paths, now) : 0;
+    src.managed = paths.managed;
+    if (!paths.appState.isEmpty())
+        src.pause = readPause(pauseFilePath(paths.appState));
     return src;
 }
 
@@ -117,5 +120,10 @@ int runStatusCommand(const QStringList &arguments, const BackendPaths &paths, QT
 
 QString usageText() {
     return "usage: syncwatch [open]\n"
-           "       syncwatch status [--json]\n";
+           "       syncwatch status [--json]\n"
+           "       syncwatch sync [--json]\n"
+           "       syncwatch pause [--minutes N | --until-tomorrow] [--json]\n"
+           "       syncwatch resume [--json]\n"
+           "       syncwatch takeover --check | --apply | --undo [--json]\n"
+           "       syncwatch run-condition | run | notify | watchdog    (for the units)\n";
 }

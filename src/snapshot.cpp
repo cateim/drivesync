@@ -57,6 +57,9 @@ Snapshot buildSnapshot(const SnapshotSources &src) {
     in.timerActive = src.timer.value("ActiveState");
     in.timerFileState = src.timer.value("UnitFileState");
     in.resyncRunning = src.resyncRunning;
+    // The old units never look at the mark, so it only counts once SyncWatch runs drive-sync.
+    const bool paused = src.pause.present && src.managed;
+    in.paused = paused;
     in.running = running;
     if (lastFinished) {
         in.lastOutcome = lastFinishedOutcome;
@@ -76,7 +79,13 @@ Snapshot buildSnapshot(const SnapshotSources &src) {
     s.running = running;
     s.resync = src.resyncRunning;
     s.conflicts = src.conflicts;
-    s.canSyncNow = src.systemctlWorks && in.serviceLoad == "loaded" && !serviceBusy && !running && !src.resyncRunning;
+    s.managed = src.managed;
+    s.paused = paused;
+    s.pausedUntil = paused ? src.pause.until : QDateTime();
+    // A run started while paused would only be skipped by run-condition; one
+    // after the pause ended runs and clears the mark.
+    s.canSyncNow = src.systemctlWorks && in.serviceLoad == "loaded" && !serviceBusy && !running && !src.resyncRunning
+                   && !(paused && !pauseEnded(src.pause, now));
     if (lastFinished) {
         s.lastRunStart = lastFinished->start;
         s.lastRunEnd = lastFinished->end;
@@ -95,7 +104,7 @@ qint64 unixOrZero(const QDateTime &when) { return when.isValid() ? when.toSecsSi
 
 QJsonObject snapshotToJson(const Snapshot &s, const QDateTime &nextRun, const QDateTime &now) {
     return {
-        {"version", 1},
+        {"version", 2},
         {"now", unixOrZero(now)},
         {"status", s.summary.status},
         {"tone", s.tone},
@@ -115,12 +124,15 @@ QJsonObject snapshotToJson(const Snapshot &s, const QDateTime &nextRun, const QD
         {"failingSince", unixOrZero(s.failingSince)},
         {"typicalSeconds", s.typicalSeconds},
         {"conflicts", s.conflicts},
+        {"managed", s.managed},
+        {"paused", s.paused},
+        {"pausedUntil", unixOrZero(s.pausedUntil)},
     };
 }
 
 QString toneFor(const QString &status) {
     static const QStringList errors{"failed", "timerOff", "unavailable", "notLoaded", "noLog", "noDrive"};
-    static const QStringList warnings{"interrupted", "skipped", "stale", "conflicts"};
+    static const QStringList warnings{"interrupted", "skipped", "paused", "stale", "conflicts"};
     if (errors.contains(status))
         return "error";
     if (warnings.contains(status))
