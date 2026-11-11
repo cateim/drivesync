@@ -57,7 +57,7 @@ Snapshot buildSnapshot(const SnapshotSources &src) {
     in.timerActive = src.timer.value("ActiveState");
     in.timerFileState = src.timer.value("UnitFileState");
     in.resyncRunning = src.resyncRunning;
-    // The old units never look at the mark, so it only counts once SyncWatch runs drive-sync.
+    // The old units never look at the mark, so it only counts once DriveSync runs drive-sync.
     const bool paused = src.pause.present && src.managed;
     in.paused = paused;
     in.running = running;

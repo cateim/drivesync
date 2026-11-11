@@ -62,7 +62,7 @@ QString at(const NotifierPaths &tools, const QDateTime &when) {
 int notify(const NotifierPaths &tools, const QString &urgency, const QString &icon, const QString &title,
            const QString &body) {
     QByteArray output;
-    runProcess(tools.notifySend, {"-p", "-a", "syncwatch", "-u", urgency, "-i", icon, title, body}, kToolTimeoutMs,
+    runProcess(tools.notifySend, {"-p", "-a", "drivesync", "-u", urgency, "-i", icon, title, body}, kToolTimeoutMs,
                &output, nullptr);
     return QString::fromUtf8(output).trimmed().toInt();
 }
@@ -116,16 +116,16 @@ void reportSolved(const NotifierPaths &tools, const QString &file, const QString
 QString causeSentence(const QString &kind, const QString &detail) {
     if (kind == "lostListings")
         return tr("bisync lost its listings, the base of both sides. "
-                  "To recover: syncwatch takeover --undo, then drive-sync.sh resync");
+                  "To recover: drivesync takeover --undo, then drive-sync.sh resync");
     if (kind == "outOfSync")
         return tr("The listings of the two sides don't match, so bisync dropped its base. "
-                  "To recover: syncwatch takeover --undo, then drive-sync.sh resync");
+                  "To recover: drivesync takeover --undo, then drive-sync.sh resync");
     return detail;
 }
 
 // One line on what broke in the run that just ended. Only runs that started
 // with it count, as in drive-sync-aviso; the log parser already turns an
-// error before "Synching Path1" (rclone that did not start, or SyncWatch's
+// error before "Synching Path1" (rclone that did not start, or DriveSync's
 // refusal) into a failed run of its own.
 QString cause(const QString &serviceResult, const BackendPaths &paths) {
     if (serviceResult == "timeout")
@@ -185,8 +185,8 @@ void remindOfPause(const BackendPaths &paths, const NotifierPaths &tools, const 
     const QDateTime last = mark.lastReminder.isValid() ? mark.lastReminder : since;
     if (last.secsTo(now) < kPauseReminderSeconds)
         return;
-    notify(tools, "normal", "dialog-information", tr("SyncWatch is still paused"),
-           tr("Drive has been paused since %1. Resume it in SyncWatch or with: syncwatch resume")
+    notify(tools, "normal", "dialog-information", tr("DriveSync is still paused"),
+           tr("Drive has been paused since %1. Resume it in DriveSync or with: drivesync resume")
                .arg(at(tools, since)));
     // notify-send can take seconds: a resume or a new pause in the meantime wins.
     const PauseMark current = readPause(file);
@@ -231,7 +231,7 @@ int runWatchdogCommand(const BackendPaths &paths, const SyncConfig &config, cons
     const QString stillNoSync = tr("Drive is still not syncing");
     const QString problem = configError.isEmpty()
         ? timerProblem(paths)
-        : tr("SyncWatch's config cannot be read, so no run happens: %1").arg(configError);
+        : tr("DriveSync's config cannot be read, so no run happens: %1").arg(configError);
     if (!problem.isEmpty())
         reportProblem(tools, file, noSync, stillNoSync, problem, tr("Noticed at %1."), now);
     else

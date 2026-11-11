@@ -4,7 +4,7 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 
 // Sync now, pause and resume, each with its key. Pause and resume need
-// SyncWatch to run drive-sync, so they show only after a takeover.
+// DriveSync to run drive-sync, so they show only after a takeover.
 RowLayout {
     id: row
 

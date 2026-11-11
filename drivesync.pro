@@ -1,13 +1,14 @@
 QT += core gui qml quick quickcontrols2 dbus
 
 CONFIG += c++17 release
-TARGET = syncwatch
+TARGET = drivesync
 TEMPLATE = app
 
 HEADERS += \
     src/backend.h \
     src/conflictcache.h \
     src/controlcommands.h \
+    src/legacymigration.h \
     src/notifier.h \
     src/pausestate.h \
     src/pluginsetup.h \
@@ -25,6 +26,7 @@ SOURCES += \
     src/backend.cpp \
     src/conflictcache.cpp \
     src/controlcommands.cpp \
+    src/legacymigration.cpp \
     src/notifier.cpp \
     src/pausestate.cpp \
     src/pluginsetup.cpp \

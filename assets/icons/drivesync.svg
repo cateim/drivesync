@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
-  <title>SyncWatch</title>
+  <title>DriveSync</title>
   <desc>A cream cloud on the dark Omarchy tile, with a green check badge at its lower right: the folder is in sync.</desc>
   <rect width="128" height="128" rx="24" fill="#101010"/>
   <!-- The cloud is a capsule with three circles on top, all one color, so it reads as one shape. -->

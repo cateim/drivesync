@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 
-// Offers to run drive-sync from SyncWatch, or says why it cannot yet.
+// Offers to run drive-sync from DriveSync, or says why it cannot yet.
 // Nothing changes until the user confirms in the dialog that T opens.
 Rectangle {
     id: banner
@@ -33,10 +33,10 @@ Rectangle {
         if (code === "noListings") return qsTr("bisync has no listings to keep")
         if (code === "filtersChanged") return qsTr("the filters changed since the last resync")
         if (code === "remoteMissing") return qsTr("rclone does not know the remote")
-        if (code === "unreadableUnit") return qsTr("drive-sync.service runs something SyncWatch cannot read")
-        if (code === "targetExists") return qsTr("~/.config/syncwatch already has filters")
-        if (code.startsWith("unknownDirective:")) return qsTr("drive-sync has %1, which SyncWatch cannot keep").arg(name)
-        if (code.startsWith("differentValue:")) return qsTr("%1 differs from SyncWatch's unit").arg(name)
+        if (code === "unreadableUnit") return qsTr("drive-sync.service runs something DriveSync cannot read")
+        if (code === "targetExists") return qsTr("~/.config/drivesync already has filters")
+        if (code.startsWith("unknownDirective:")) return qsTr("drive-sync has %1, which DriveSync cannot keep").arg(name)
+        if (code.startsWith("differentValue:")) return qsTr("%1 differs from DriveSync's unit").arg(name)
         return code
     }
 
@@ -54,7 +54,7 @@ Rectangle {
             text: {
                 translator.language
                 switch (banner.setupState) {
-                case "offer": return qsTr("SyncWatch can run drive-sync itself, with notifications, pause and resume. The same rclone command keeps running, with no resync.")
+                case "offer": return qsTr("DriveSync can run drive-sync itself, with notifications, pause and resume. The same rclone command keeps running, with no resync.")
                 case "working": return qsTr("Taking over drive-sync…")
                 case "blocked":
                     if (banner.waitsForRun && takeoverSetup.pending)
@@ -63,7 +63,7 @@ Rectangle {
                         return banner.armed
                             ? qsTr("A run is going. The takeover dialog opens as soon as it ends (T cancels).")
                             : qsTr("A run is going. Press T and the takeover dialog opens as soon as it ends.")
-                    return qsTr("SyncWatch cannot take over drive-sync yet: %1.")
+                    return qsTr("DriveSync cannot take over drive-sync yet: %1.")
                                     .arg(takeoverSetup.blockers.map(code => banner.blockerText(code)).join("; "))
                 }
                 return qsTr("The takeover did not happen: %1").arg(takeoverSetup.detail)

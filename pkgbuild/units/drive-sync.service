@@ -1,8 +1,8 @@
-# Shipped by SyncWatch. A drive-sync.service in ~/.config/systemd/user wins over
+# Shipped by DriveSync. A drive-sync.service in ~/.config/systemd/user wins over
 # this one, so installing the package changes nothing until a takeover moves
 # that file aside.
 [Unit]
-Description=drive-sync: rclone bisync run by SyncWatch
+Description=drive-sync: rclone bisync run by DriveSync
 
 [Service]
 Type=oneshot
@@ -10,10 +10,10 @@ Type=oneshot
 # (a normal run takes about 8 min).
 TimeoutStartSec=2h
 # Skips the run while paused, or when the config's runOnlyWhen fails.
-ExecCondition=/usr/bin/syncwatch run-condition
+ExecCondition=/usr/bin/drivesync run-condition
 # Checks the filters' md5 first, then becomes rclone.
-ExecStart=/usr/bin/syncwatch run
+ExecStart=/usr/bin/drivesync run
 # Notifies when a run fails, and when runs work again.
-ExecStopPost=-/usr/bin/syncwatch notify
+ExecStopPost=-/usr/bin/drivesync notify
 Nice=10
 IOSchedulingClass=idle

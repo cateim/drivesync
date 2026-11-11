@@ -6,25 +6,28 @@
 #include <QStringList>
 #include <functional>
 
-// Puts SyncWatch's bar widget on the Omarchy bar. The package installs the
+// Puts DriveSync's bar widget on the Omarchy bar. The package installs the
 // widget under /usr/share, but Omarchy loads third-party plugins only from
 // ~/.config/omarchy/plugins, so the window links it there and, when the
 // user agrees, enables it through Omarchy's own `omarchy plugin` commands.
 // Omarchy's shell.json is never edited here.
 
 struct PluginPaths {
-    QString shipped;       // /usr/share/syncwatch/omarchy-plugin
+    QString shipped;       // /usr/share/drivesync/omarchy-plugin
     QString userPlugins;   // ~/.config/omarchy/plugins
     QString omarchy;       // the omarchy command, empty when Omarchy is not there
     QString omarchyShell;  // omarchy-shell, to make the shell look for the new link
     QString declined;      // a file that says the user said no; empty never remembers
+    QString legacyShipped; // /usr/share/syncwatch/omarchy-plugin; empty skips the rename handling
 
     static PluginPaths defaults();
 };
 
-inline constexpr char kPluginId[] = "syncwatch";
-// The widget's id before it moved into SyncWatch.
+inline constexpr char kPluginId[] = "drivesync";
+// The widget's id before it moved into the app.
 inline constexpr char kOldPluginId[] = "cateim.drive-sync";
+// The same widget while the app was called SyncWatch, until 2026-11-11.
+inline constexpr char kLegacyPluginId[] = "syncwatch";
 
 class PluginSetup : public QObject {
     Q_OBJECT
@@ -47,7 +50,7 @@ public:
     // Only does something after check() offered it.
     Q_INVOKABLE void accept();
     // Remembers "no": later starts neither offer nor link the widget, so an
-    // `omarchy plugin remove syncwatch` stays removed.
+    // `omarchy plugin remove drivesync` stays removed.
     Q_INVOKABLE void decline();
 
 signals:
@@ -56,10 +59,13 @@ signals:
 private:
     void setState(const QString &state, const QString &detail = QString());
     void readList();
+    bool legacyLinked() const;
+    void replaceLegacy();
     void run(const QString &program, const QStringList &arguments,
              std::function<void(bool ok, const QByteArray &output, const QByteArray &error)> done);
 
     PluginPaths m_paths;
     QString m_state = "checking";
     QString m_detail;
+    bool m_legacyTried = false;
 };

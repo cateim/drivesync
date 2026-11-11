@@ -57,7 +57,7 @@ QString withoutExecPrefix(QString value) {
     return value;
 }
 
-// Checks a unit against the keys SyncWatch knows: an unknown key is a
+// Checks a unit against the keys DriveSync knows: an unknown key is a
 // blocker, and so is a known key with another value than the packaged unit.
 void checkKeys(const UnitFile &unit, const QHash<QString, QHash<QString, QString>> &known, QStringList *blockers) {
     for (auto section = unit.cbegin(); section != unit.cend(); ++section) {
@@ -74,7 +74,7 @@ void checkKeys(const UnitFile &unit, const QHash<QString, QHash<QString, QString
 
 // QProcess::splitCommand knows double quotes only. systemd also reads single
 // quotes, backslash escapes, %-specifiers and $VARIABLES, so a line with any
-// of them could mean something else to systemd than to SyncWatch.
+// of them could mean something else to systemd than to DriveSync.
 bool readsLikeSystemd(const QString &value, const QString &forbidden) {
     for (const QChar c : forbidden)
         if (value.contains(c))
@@ -149,13 +149,13 @@ TakeoverPaths TakeoverPaths::defaults() {
     return {home + "/.config/systemd/user",
             home + "/.local/bin",
             home + "/.local/state/drive-sync",
-            home + "/.config/syncwatch",
-            home + "/.local/share/syncwatch/taken-over",
+            home + "/.config/drivesync",
+            home + "/.local/share/drivesync/taken-over",
             QStandardPaths::findExecutable("systemctl"),
             QStandardPaths::findExecutable("rclone"),
             20 * 60 * 1000,
             "/usr/lib/systemd/user",
-            home + "/.local/state/syncwatch"};
+            home + "/.local/state/drivesync"};
 }
 
 TakeoverPlan detectTakeover(const TakeoverPaths &paths, const Snapshot &snapshot) {
@@ -200,7 +200,7 @@ TakeoverPlan detectTakeover(const TakeoverPaths &paths, const Snapshot &snapshot
     if (readable && conditions.size() == 1)
         readable = readExecCondition(conditions.first(), &plan.config);
     for (const QString &stopPost : stopPosts)
-        // The old notifier is replaced by "syncwatch notify"; anything else would be lost.
+        // The old notifier is replaced by "drivesync notify"; anything else would be lost.
         if (QFileInfo(QProcess::splitCommand(withoutExecPrefix(stopPost)).value(0)).fileName() != "drive-sync-aviso")
             plan.blockers << "unknownDirective:ExecStopPost";
 
@@ -248,7 +248,7 @@ TakeoverPlan detectTakeover(const TakeoverPaths &paths, const Snapshot &snapshot
     }
 
     // A drop-in applies to the packaged unit of the same name too, and one
-    // with its own ExecStart would bypass "syncwatch run" and its md5 check.
+    // with its own ExecStart would bypass "drivesync run" and its md5 check.
     for (const QString &dir : {paths.userUnits, paths.systemUserUnits})
         for (const QString &unitName : {QString("drive-sync.service"), QString("drive-sync.timer")})
             if (QFileInfo(dir + "/" + unitName + ".d").isDir())
@@ -303,7 +303,7 @@ const QStringList kNewTimers{"drive-sync.timer", "drive-sync-watchdog.timer"};
 // worse than leaving everything off.
 struct Done {
     std::function<QString(bool *fatal)> undo;  // empty answer means it went fine
-    bool always = false;  // SyncWatch's own files: removed even after a fatal stop
+    bool always = false;  // DriveSync's own files: removed even after a fatal stop
 };
 
 bool systemctl(const TakeoverPaths &paths, const QStringList &arguments, QString *error) {
@@ -463,7 +463,7 @@ QString checkPackagedUnits(const TakeoverPaths &paths) {
     for (const auto &unit : units) {
         const QString fragment = unit.value("FragmentPath");
         if (!fragment.startsWith(paths.packagedUnits + "/"))
-            return QString("systemd still uses %1, not SyncWatch's unit").arg(fragment.isEmpty() ? "?" : fragment);
+            return QString("systemd still uses %1, not DriveSync's unit").arg(fragment.isEmpty() ? "?" : fragment);
         if (!unit.value("DropInPaths").isEmpty())
             return "a drop-in still applies: " + unit.value("DropInPaths");
     }
@@ -496,7 +496,7 @@ bool applyTakeover(const TakeoverPaths &paths, const TakeoverPlan &plan, const Q
         *error = plan.blockers.isEmpty() ? QString("nothing to take over") : plan.blockers.join(", ");
         return false;
     }
-    // "syncwatch sync" and an undo refuse while this lock is held.
+    // "drivesync sync" and an undo refuse while this lock is held.
     if (!takeLock(paths.appState, error))
         return false;
     const auto unlock = qScopeGuard([&] { releaseLock(paths.appState); });
@@ -504,7 +504,7 @@ bool applyTakeover(const TakeoverPaths &paths, const TakeoverPlan &plan, const Q
     QList<Done> done;
     // Takes back every step done so far, newest first, and stops at a fatal
     // one; what could not be taken back is added to the error.
-    // After a fatal one only SyncWatch's own files go, so the window does not
+    // After a fatal one only DriveSync's own files go, so the window does not
     // claim to run drive-sync while every timer is off.
     auto rollBack = [&](const QString &why) {
         QStringList left;
@@ -649,7 +649,7 @@ bool applyTakeover(const TakeoverPaths &paths, const TakeoverPlan &plan, const Q
         return systemctl(paths, QStringList{"disable", "--now"} + kNewTimers, &e) ? QString() : e;
     }});
     if (!systemctl(paths, QStringList{"enable", "--now"} + kNewTimers, &why))
-        return rollBack("could not enable SyncWatch's timers: " + why);
+        return rollBack("could not enable DriveSync's timers: " + why);
     return true;
 }
 
@@ -705,7 +705,7 @@ bool undoTakeover(const TakeoverPaths &paths, QString *error) {
         *error = "a run is going; undo when it ends";
         return false;
     }
-    // How SyncWatch's timers are now, so a refusal leaves them exactly so.
+    // How DriveSync's timers are now, so a refusal leaves them exactly so.
     QStringList newEnabled, newActive;
     for (const QString &timer : kNewTimers) {
         if (unitAnswer(paths, "is-enabled", timer) == "enabled")
@@ -715,10 +715,10 @@ bool undoTakeover(const TakeoverPaths &paths, QString *error) {
     }
     auto restoreNew = [&] {
         const QString problem = restoreOldTimers(paths, newEnabled, newActive);
-        return problem.isEmpty() ? QString() : "; and SyncWatch's timers did not come back: " + problem;
+        return problem.isEmpty() ? QString() : "; and DriveSync's timers did not come back: " + problem;
     };
     if (!systemctl(paths, QStringList{"disable", "--now"} + kNewTimers, &why)) {
-        *error = "could not stop SyncWatch's timers: " + why + restoreNew();
+        *error = "could not stop DriveSync's timers: " + why + restoreNew();
         return false;
     }
     // The timer may have fired between the check and the stop.
@@ -729,7 +729,7 @@ bool undoTakeover(const TakeoverPaths &paths, QString *error) {
 
     QList<QPair<QString, QString>> back;
     if (const QString stuck = moveBack(moves, &back); !stuck.isEmpty()) {
-        // Put back into the backup what already left it, so SyncWatch's units
+        // Put back into the backup what already left it, so DriveSync's units
         // are the only ones again, and start them.
         QList<QPair<QString, QString>> again;
         for (const auto &[from, to] : back)
@@ -737,7 +737,7 @@ bool undoTakeover(const TakeoverPaths &paths, QString *error) {
         QList<QPair<QString, QString>> ignored;
         moveBack(again, &ignored);
         systemctl(paths, {"daemon-reload"}, &why);
-        *error = QString("%1 could not go back, so nothing was undone; SyncWatch still runs drive-sync").arg(stuck)
+        *error = QString("%1 could not go back, so nothing was undone; DriveSync still runs drive-sync").arg(stuck)
                  + restoreNew();
         return false;
     }
@@ -780,7 +780,7 @@ int runTakeoverCommand(const QStringList &arguments, const TakeoverPaths &paths,
     QStringList rest = arguments;
     const bool json = rest.removeAll("--json") > 0;
     if (rest.size() != 1 || !QStringList{"--check", "--apply", "--undo"}.contains(rest.first())) {
-        err << "usage: syncwatch takeover --check | --apply | --undo [--json]\n";
+        err << "usage: drivesync takeover --check | --apply | --undo [--json]\n";
         return 1;
     }
     const QString action = rest.first();
@@ -812,7 +812,7 @@ int runTakeoverCommand(const QStringList &arguments, const TakeoverPaths &paths,
         if (plan.state == "found")
             out << "runs: rclone " << rcloneRunArguments(plan.config).join(' ') << "\n";
     } else if (!ok) {
-        err << "syncwatch: " << error << "\n";
+        err << "drivesync: " << error << "\n";
     }
     out.flush();
     err.flush();

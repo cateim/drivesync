@@ -10,7 +10,7 @@ ApplicationWindow {
     minimumWidth: 720
     minimumHeight: 560
     visible: true
-    title: "SyncWatch"
+    title: "DriveSync"
     color: "#0e0e10"
 
     Material.theme: Material.Dark

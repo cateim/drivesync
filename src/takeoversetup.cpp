@@ -76,7 +76,7 @@ void TakeoverSetup::apply(const QByteArray &output, bool applying) {
         m_state = "failed";
         m_detail = answer.value("error").toString();
         if (m_detail.isEmpty())
-            m_detail = tr("SyncWatch could not read the drive-sync setup.");
+            m_detail = tr("DriveSync could not read the drive-sync setup.");
         emit changed();
         return;
     }

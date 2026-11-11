@@ -119,11 +119,11 @@ int runStatusCommand(const QStringList &arguments, const BackendPaths &paths, QT
 }
 
 QString usageText() {
-    return "usage: syncwatch [open]\n"
-           "       syncwatch status [--json]\n"
-           "       syncwatch sync [--json]\n"
-           "       syncwatch pause [--minutes N | --until-tomorrow] [--json]\n"
-           "       syncwatch resume [--json]\n"
-           "       syncwatch takeover --check | --apply | --undo [--json]\n"
-           "       syncwatch run-condition | run | notify | watchdog    (for the units)\n";
+    return "usage: drivesync [open]\n"
+           "       drivesync status [--json]\n"
+           "       drivesync sync [--json]\n"
+           "       drivesync pause [--minutes N | --until-tomorrow] [--json]\n"
+           "       drivesync resume [--json]\n"
+           "       drivesync takeover --check | --apply | --undo [--json]\n"
+           "       drivesync run-condition | run | notify | watchdog    (for the units)\n";
 }

@@ -22,7 +22,7 @@ bool fail(QString *error, const QString &message) {
 }  // namespace
 
 QString defaultSyncConfigPath() {
-    return QDir::homePath() + "/.config/syncwatch/config.json";
+    return QDir::homePath() + "/.config/drivesync/config.json";
 }
 
 std::optional<SyncConfig> loadSyncConfig(const QString &path, QString *error) {

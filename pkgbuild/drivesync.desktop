@@ -1,12 +1,12 @@
 [Desktop Entry]
 Type=Application
-Name=SyncWatch
+Name=DriveSync
 Comment=See how drive-sync is keeping ~/Drive and Google Drive in step
 Comment[pt_BR]=Veja como o drive-sync está mantendo o ~/Drive e o Google Drive em dia
-Exec=syncwatch
-Icon=syncwatch
+Exec=drivesync
+Icon=drivesync
 Terminal=false
 Categories=Utility;
 Keywords=drive;sync;rclone;bisync;conflict;
 Keywords[pt_BR]=drive;sincronização;rclone;bisync;conflito;
-StartupWMClass=syncwatch
+StartupWMClass=drivesync

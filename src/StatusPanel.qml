@@ -73,12 +73,12 @@ Rectangle {
 
     function causeText(kind, detail) {
         switch (kind) {
-        // Until SyncWatch can resync (step 3), a managed setup goes back to the old scripts for it.
+        // Until DriveSync can resync (step 3), a managed setup goes back to the old scripts for it.
         case "lostListings": return backend.managed
-            ? qsTr("bisync lost its listings, the base of both sides. To recover: syncwatch takeover --undo, then drive-sync.sh resync")
+            ? qsTr("bisync lost its listings, the base of both sides. To recover: drivesync takeover --undo, then drive-sync.sh resync")
             : qsTr("bisync lost its listings, the base of both sides. To recover: drive-sync.sh resync")
         case "outOfSync": return backend.managed
-            ? qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: syncwatch takeover --undo, then drive-sync.sh resync")
+            ? qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: drivesync takeover --undo, then drive-sync.sh resync")
             : qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: drive-sync.sh resync")
         case "timeout": return qsTr("The run went past its time limit (TimeoutStartSec) and systemd stopped it.")
         case "systemd": return qsTr("systemd says the last run failed (%1), and the log has nothing about it.").arg(detail)

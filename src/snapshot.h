@@ -13,7 +13,7 @@
 #include "synclog.h"
 
 // One state of drive-sync, decided in one place. The window, the
-// "syncwatch status" command and the bar widget all show what
+// "drivesync status" command and the bar widget all show what
 // buildSnapshot() decides, so they can never disagree.
 
 // A normal run writes about 30 KB to the log, a resync a few MB; the tail
@@ -71,7 +71,7 @@ struct SnapshotSources {
     bool resyncRunning = false;
     bool driveFound = true;
     int conflicts = 0;
-    bool managed = false;             // SyncWatch's own units run drive-sync
+    bool managed = false;             // DriveSync's own units run drive-sync
     PauseMark pause;
     QDateTime now;                    // UTC
 };
@@ -97,7 +97,7 @@ struct Snapshot {
 };
 
 Snapshot buildSnapshot(const SnapshotSources &src);
-// Version 2 of the "syncwatch status --json" contract (version 1 plus
+// Version 2 of the "drivesync status --json" contract (version 1 plus
 // managed, paused and pausedUntil). Every key is always
 // present; times are Unix seconds, 0 when unknown. The bar widget reads it.
 QJsonObject snapshotToJson(const Snapshot &s, const QDateTime &nextRun, const QDateTime &now);

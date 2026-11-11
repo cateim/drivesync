@@ -6,14 +6,14 @@ import qs.Commons as Commons
 import qs.Ui
 import "DriveSyncModel.js" as Model
 
-// SyncWatch's bar widget for drive-sync. The icon says at a glance how the
+// DriveSync's bar widget for drive-sync. The icon says at a glance how the
 // sync is doing; the panel says when, what failed, and runs one now. The
-// state comes from the app (`syncwatch status --json`), so the bar and the
+// state comes from the app (`drivesync status --json`), so the bar and the
 // window can never disagree.
 Panel {
   id: root
-  moduleName: "syncwatch"
-  ipcTarget: "syncwatch"
+  moduleName: "drivesync"
+  ipcTarget: "drivesync"
   manageIpc: false
 
   readonly property var status: sync.status
@@ -262,7 +262,7 @@ Panel {
           }
           PanelActionButton {
             iconText: String.fromCodePoint(0xF021A)
-            tooltipText: strings.t("action.syncwatch")
+            tooltipText: strings.t("action.drivesync")
             hasCursor: root.cursorActive && root.actionIndex === 2
             foreground: root.foreground
             fontFamily: root.fontFamily

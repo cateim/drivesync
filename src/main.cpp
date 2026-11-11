@@ -1,6 +1,7 @@
-// syncwatch - shows how drive-sync, the rclone bisync of ~/Drive, is doing.
+// drivesync - shows how drive-sync, the rclone bisync of ~/Drive, is doing.
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QGuiApplication>
 #include <QIcon>
 #include <QQmlApplicationEngine>
@@ -11,6 +12,7 @@
 
 #include "backend.h"
 #include "controlcommands.h"
+#include "legacymigration.h"
 #include "notifier.h"
 #include "pluginsetup.h"
 #include "statuscommand.h"
@@ -20,6 +22,12 @@
 #include "translator.h"
 
 int main(int argc, char *argv[]) {
+    // Before anything else: the conflict cache, the pause mark and the bar
+    // offer all create their folder, and a new folder made first would leave
+    // the live config behind in the old one.
+    for (const QString &problem : migrateFromSyncWatch(QDir::homePath()))
+        QTextStream(stderr) << "drivesync: " << problem << "\n";
+
     const QString command = argc > 1 ? QString::fromLocal8Bit(argv[1]) : QString();
 
     // Commands that need no display run without a GUI application, so the
@@ -28,7 +36,7 @@ int main(int argc, char *argv[]) {
                                       "watchdog", "takeover"};
     if (headless.contains(command)) {
         QCoreApplication app(argc, argv);
-        app.setApplicationName("syncwatch");
+        app.setApplicationName("drivesync");
         app.setApplicationVersion("0.1.0");
         QTextStream out(stdout);
         QTextStream err(stderr);
@@ -63,7 +71,7 @@ int main(int argc, char *argv[]) {
         QString error;
         const auto config = loadSyncConfig(paths.config, &error);
         if (!config) {
-            err << "syncwatch: " << error << "\n";
+            err << "drivesync: " << error << "\n";
             return 255;
         }
         return runConditionCommand(paths, *config, QDateTime::currentDateTimeUtc());
@@ -76,13 +84,13 @@ int main(int argc, char *argv[]) {
     }
 
     QGuiApplication app(argc, argv);
-    app.setApplicationName("syncwatch");
+    app.setApplicationName("drivesync");
     app.setApplicationVersion("0.1.0");
 
-    // Matches the window to syncwatch.desktop, so the compositor (Wayland
+    // Matches the window to drivesync.desktop, so the compositor (Wayland
     // app_id) and the launcher pick up the installed icon.
-    app.setDesktopFileName("syncwatch");
-    app.setWindowIcon(QIcon::fromTheme("syncwatch"));
+    app.setDesktopFileName("drivesync");
+    app.setWindowIcon(QIcon::fromTheme("drivesync"));
 
     QQuickStyle::setStyle("Material");
 

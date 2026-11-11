@@ -1,4 +1,4 @@
-# Shipped by SyncWatch; enabled by the takeover.
+# Shipped by DriveSync; enabled by the takeover.
 [Unit]
 Description=drive-sync: check every hour that runs still happen
 

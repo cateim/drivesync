@@ -1,4 +1,4 @@
-pkgname=syncwatch
+pkgname=drivesync
 pkgver=0.1.0
 pkgrel=1
 pkgdesc='See how drive-sync is keeping ~/Drive and Google Drive in step'
@@ -6,6 +6,11 @@ arch=('x86_64' 'aarch64')
 license=('MIT')
 depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'systemd' 'findutils' 'rclone' 'libnotify')
 makedepends=('gcc' 'make')
+# The app was called SyncWatch until 2026-11-11, and both packages ship the
+# same drive-sync units: pacman -U offers to remove syncwatch, and the first
+# drivesync command moves its folders under the home to the new name.
+conflicts=('syncwatch')
+replaces=('syncwatch')
 # A local app has no use for the split -debug package makepkg.conf asks for.
 options=('!debug')
 source=()
@@ -18,10 +23,10 @@ build() {
 
 package() {
   cd "$startdir/.."
-  install -Dm755 build/syncwatch "$pkgdir/usr/bin/syncwatch"
+  install -Dm755 build/drivesync "$pkgdir/usr/bin/drivesync"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-  install -Dm644 assets/icons/syncwatch.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/syncwatch.svg"
-  install -Dm644 "$startdir/syncwatch.desktop" "$pkgdir/usr/share/applications/syncwatch.desktop"
+  install -Dm644 assets/icons/drivesync.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/drivesync.svg"
+  install -Dm644 "$startdir/drivesync.desktop" "$pkgdir/usr/share/applications/drivesync.desktop"
 
   # User units, inert until a takeover enables them: a unit of the same name
   # in ~/.config/systemd/user wins over these.
@@ -32,7 +37,7 @@ package() {
   # The bar widget. Omarchy loads third-party plugins only from
   # ~/.config/omarchy/plugins, which a package cannot write, so it lands here
   # and the app links it into the user's folder on first start.
-  local widget="$pkgdir/usr/share/syncwatch/omarchy-plugin"
+  local widget="$pkgdir/usr/share/drivesync/omarchy-plugin"
   install -Dm644 plugin/manifest.json plugin/DriveSync.qml plugin/DriveSyncService.qml \
     plugin/DriveSyncModel.js -t "$widget"
   install -Dm755 plugin/open-history.sh -t "$widget"

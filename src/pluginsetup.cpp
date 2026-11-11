@@ -11,11 +11,12 @@
 #include <QTimer>
 
 PluginPaths PluginPaths::defaults() {
-    return {"/usr/share/syncwatch/omarchy-plugin",
+    return {"/usr/share/drivesync/omarchy-plugin",
             QDir::homePath() + "/.config/omarchy/plugins",
             QStandardPaths::findExecutable("omarchy"),
             QStandardPaths::findExecutable("omarchy-shell"),
-            QDir::homePath() + "/.local/state/syncwatch/bar-declined"};
+            QDir::homePath() + "/.local/state/drivesync/bar-declined",
+            "/usr/share/syncwatch/omarchy-plugin"};
 }
 
 PluginSetup::PluginSetup(const PluginPaths &paths, QObject *parent) : QObject(parent), m_paths(paths) {}
@@ -95,6 +96,10 @@ void PluginSetup::readList() {
             enabled = enabled || plugin.value("id").toString() == kPluginId;
             oldEnabled = oldEnabled || plugin.value("id").toString() == kOldPluginId;
         }
+        if (!enabled && legacyLinked()) {
+            replaceLegacy();
+            return;
+        }
         setState(enabled ? "enabled" : oldEnabled ? "replaceOffer" : "offer");
     });
 }
@@ -129,13 +134,49 @@ void PluginSetup::accept() {
     }
 }
 
+// The link SyncWatch made, now dangling: pacman removed /usr/share/syncwatch
+// with the old package, so the shell no longer lists that widget.
+bool PluginSetup::legacyLinked() const {
+    if (m_legacyTried || m_paths.legacyShipped.isEmpty())
+        return false;
+    const QFileInfo link(m_paths.userPlugins + "/" + kLegacyPluginId);
+    return link.isSymLink() && link.symLinkTarget() == m_paths.legacyShipped;
+}
+
+// The user had put SyncWatch's widget on the bar, and DriveSync's is the same
+// widget renamed, so it takes the old one's place without asking again. The
+// old entry goes only after the new one is in, and its link with it. An
+// enable that fails means the old widget was not on the bar: nothing to
+// replace, and the usual offer follows.
+void PluginSetup::replaceLegacy() {
+    m_legacyTried = true;
+    const QString link = m_paths.userPlugins + "/" + kLegacyPluginId;
+    setState("checking");
+    run(m_paths.omarchy, {"plugin", "enable", kPluginId, "--after", kLegacyPluginId},
+        [this, link](bool ok, const QByteArray &, const QByteArray &) {
+            if (!ok) {
+                QFile::remove(link);
+                readList();
+                return;
+            }
+            run(m_paths.omarchy, {"plugin", "disable", kLegacyPluginId},
+                [this, link](bool ok, const QByteArray &, const QByteArray &error) {
+                    QFile::remove(link);
+                    if (ok)
+                        readList();
+                    else
+                        setState("failed", QString::fromUtf8(error).trimmed());
+                });
+        });
+}
+
 void PluginSetup::decline() {
     if (m_state != "offer" && m_state != "replaceOffer")
         return;
     if (!m_paths.declined.isEmpty() && QDir().mkpath(QFileInfo(m_paths.declined).absolutePath())) {
         QFile mark(m_paths.declined);
         if (mark.open(QIODevice::WriteOnly))
-            mark.write("The bar widget was declined in the SyncWatch window. Delete this file to be asked again.\n");
+            mark.write("The bar widget was declined in the DriveSync window. Delete this file to be asked again.\n");
     }
     setState("declined");
 }

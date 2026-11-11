@@ -14,7 +14,7 @@ vm.runInNewContext(source.replace(/^\.pragma library\s*$/m, ""), model)
 const STATUSES = ["ok", "running", "resync", "paused", "failed", "interrupted", "skipped", "timerOff",
                   "stale", "noDrive", "noLog", "notLoaded", "unavailable", "conflicts"]
 
-// What `syncwatch status --json` prints with drive-sync in sync (contract version 2).
+// What `drivesync status --json` prints with drive-sync in sync (contract version 2).
 const HEALTHY = {
   version: 2, now: 1794076940, status: "ok", tone: "ok",
   causeKind: "", causeDetail: "", warnings: [],
@@ -44,7 +44,7 @@ test("parseSnapshot reads a healthy snapshot", () => {
 
 test("parseSnapshot rejects non-JSON, other versions and a missing clock", () => {
   assert.equal(model.parseSnapshot("now=1794076940").ok, false)
-  // Version 1 has no pause: an older syncwatch must not look like one that is never paused.
+  // Version 1 has no pause: an older drivesync must not look like one that is never paused.
   assert.equal(model.parseSnapshot(json({ version: 1 })).ok, false)
   assert.equal(model.parseSnapshot(json({ version: 3 })).ok, false)
   assert.equal(model.parseSnapshot(json({ now: 0 })).ok, false)
@@ -96,9 +96,9 @@ test("barState maps every status", () => {
   assert.equal(model.barState(snapshot({ status: "", tone: "" })), "unknown")
 })
 
-test("a missing or old syncwatch shows unknown", () => {
+test("a missing or old drivesync shows unknown", () => {
   assert.equal(model.barState(model.parseSnapshot("")), "unknown")
-  assert.equal(model.barState(model.parseSnapshot("usage: syncwatch [open]")), "unknown")
+  assert.equal(model.barState(model.parseSnapshot("usage: drivesync [open]")), "unknown")
 })
 
 test("canSyncNow follows the app", () => {
@@ -108,7 +108,7 @@ test("canSyncNow follows the app", () => {
 })
 
 // Quickshell ends a process that failed to start without ending its output
-// stream, and an old syncwatch would open a window instead of answering. Both
+// stream, and an old drivesync would open a window instead of answering. Both
 // must end as "unknown", never as the last good snapshot.
 test("a poll that ends without output or hangs shows unknown", () => {
   const qml = readFileSync(new URL("../DriveSyncService.qml", import.meta.url), "utf8")
@@ -126,7 +126,7 @@ test("lastRunSeconds only for a finished run", () => {
 // The late rule lives in the app now; the widget must not keep a copy.
 test("the widget leaves the late rule to the app", () => {
   const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"))
-  assert.equal(manifest.id, "syncwatch")
+  assert.equal(manifest.id, "drivesync")
   assert.equal("staleAfterMin" in manifest.barWidget.defaults, false)
   assert.equal(manifest.barWidget.schema.some((s) => s.key === "staleAfterMin"), false)
   const qml = readFileSync(new URL("../DriveSync.qml", import.meta.url), "utf8")
@@ -224,10 +224,10 @@ test("pause and resume follow the app", () => {
   assert.equal(snapshot({ pausedUntil: "soon" }).pausedUntil, 0)
 })
 
-test("the widget changes drive-sync only through syncwatch", () => {
+test("the widget changes drive-sync only through drivesync", () => {
   const qml = readFileSync(new URL("../DriveSyncService.qml", import.meta.url), "utf8")
-  assert.match(qml, /\["syncwatch", "sync"\]/)
-  assert.match(qml, /\["syncwatch", "pause", "--minutes", "60"\]/)
-  assert.match(qml, /\["syncwatch", "resume"\]/)
+  assert.match(qml, /\["drivesync", "sync"\]/)
+  assert.match(qml, /\["drivesync", "pause", "--minutes", "60"\]/)
+  assert.match(qml, /\["drivesync", "resume"\]/)
   assert.doesNotMatch(qml, /"systemctl"/)
 })

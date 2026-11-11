@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 
-// Offers to put SyncWatch's widget on the Omarchy bar, or says why it could
+// Offers to put DriveSync's widget on the Omarchy bar, or says why it could
 // not. Nothing changes on the bar until the user presses the button or B.
 Rectangle {
     id: banner
@@ -32,10 +32,10 @@ Rectangle {
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             color: "#c4c4cc"
-            text: banner.setupState === "offer" ? qsTr("Show SyncWatch on the Omarchy bar, with the state at a glance.")
-                : banner.setupState === "replaceOffer" ? qsTr("SyncWatch can take the place of the old Drive widget on the bar.")
-                : banner.setupState === "blocked" ? qsTr("%1 already exists and is not SyncWatch's, so the bar was left alone.").arg(pluginSetup.detail)
-                : qsTr("Could not put SyncWatch on the bar: %1").arg(pluginSetup.detail)
+            text: banner.setupState === "offer" ? qsTr("Show DriveSync on the Omarchy bar, with the state at a glance.")
+                : banner.setupState === "replaceOffer" ? qsTr("DriveSync can take the place of the old Drive widget on the bar.")
+                : banner.setupState === "blocked" ? qsTr("%1 already exists and is not DriveSync's, so the bar was left alone.").arg(pluginSetup.detail)
+                : qsTr("Could not put DriveSync on the bar: %1").arg(pluginSetup.detail)
         }
         Button {
             visible: banner.offering

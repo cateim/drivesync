@@ -24,12 +24,12 @@ struct BackendPaths {
     QString proc;      // /proc, to check that the pid in the pause mark is drive-sync.sh
     QString systemctl;
     QString find;
-    QString appState;  // SyncWatch's own state folder (conflict count cache); empty writes nothing
-    QString config;    // SyncWatch's config; empty when there is none
+    QString appState;  // DriveSync's own state folder (conflict count cache); empty writes nothing
+    QString config;    // DriveSync's config; empty when there is none
     QString self;      // this program, for the commands the window runs
-    bool managed = false;  // SyncWatch runs drive-sync through its own units
+    bool managed = false;  // DriveSync runs drive-sync through its own units
 
-    // Today's paths, or the config's log and folder once SyncWatch owns drive-sync.
+    // Today's paths, or the config's log and folder once DriveSync owns drive-sync.
 
     static BackendPaths defaults();
 };

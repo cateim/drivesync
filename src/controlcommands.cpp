@@ -21,7 +21,7 @@ int answer(bool json, const QString &error, QTextStream &out, QTextStream &err) 
             << "\n";
         out.flush();
     } else if (!error.isEmpty()) {
-        err << "syncwatch: " << error << "\n";
+        err << "drivesync: " << error << "\n";
         err.flush();
     }
     return error.isEmpty() ? 0 : 1;
@@ -52,7 +52,12 @@ bool takeoverLockHeld(const QString &appState, const QString &proc) {
     bool ok = false;
     const qint64 pid = lock.readAll().trimmed().toLongLong(&ok);
     QFile cmdline(QString("%1/%2/cmdline").arg(proc).arg(pid));
-    return ok && pid > 0 && cmdline.open(QIODevice::ReadOnly) && cmdline.readAll().contains("syncwatch");
+    if (!ok || pid <= 0 || !cmdline.open(QIODevice::ReadOnly))
+        return false;
+    // A SyncWatch window left open across the rename to DriveSync still runs
+    // under its old name and may hold the lock.
+    const QByteArray program = cmdline.readAll();
+    return program.contains("drivesync") || program.contains("syncwatch");
 }
 
 bool runProcess(const QString &program, const QStringList &arguments, int timeoutMs, QByteArray *output,
@@ -86,13 +91,13 @@ int runSyncCommand(const QStringList &arguments, const BackendPaths &paths, QTex
     QStringList rest = arguments;
     const bool json = takeJson(&rest);
     if (!rest.isEmpty())
-        return answer(json, "usage: syncwatch sync [--json]", out, err);
+        return answer(json, "usage: drivesync sync [--json]", out, err);
     if (takeoverLockHeld(paths.appState, paths.proc))
         return answer(json, "a takeover is running; sync when it ends", out, err);
     // A pause that ended is cleared by the next run itself, so it does not stop one.
     const PauseMark mark = readPause(pauseFilePath(paths.appState));
     if (paths.managed && mark.present && !pauseEnded(mark, QDateTime::currentDateTimeUtc()))
-        return answer(json, "drive-sync is paused; run syncwatch resume first", out, err);
+        return answer(json, "drive-sync is paused; run drivesync resume first", out, err);
     return answer(json, startOneRun(paths), out, err);
 }
 
@@ -100,7 +105,7 @@ int runPauseCommand(const QStringList &arguments, const BackendPaths &paths, con
                     QTextStream &err) {
     QStringList rest = arguments;
     const bool json = takeJson(&rest);
-    const QString usage = "usage: syncwatch pause [--minutes N | --until-tomorrow] [--json]";
+    const QString usage = "usage: drivesync pause [--minutes N | --until-tomorrow] [--json]";
     QDateTime until;
     if (rest.size() == 2 && rest.at(0) == "--minutes") {
         bool ok = false;
@@ -114,7 +119,7 @@ int runPauseCommand(const QStringList &arguments, const BackendPaths &paths, con
         return answer(json, usage, out, err);
     }
     if (!paths.managed)
-        return answer(json, "pausing needs SyncWatch to run drive-sync; take it over first", out, err);
+        return answer(json, "pausing needs DriveSync to run drive-sync; take it over first", out, err);
 
     const QString file = pauseFilePath(paths.appState);
     PauseMark mark = readPause(file);
@@ -131,7 +136,7 @@ int runResumeCommand(const QStringList &arguments, const BackendPaths &paths, QT
     QStringList rest = arguments;
     const bool json = takeJson(&rest);
     if (!rest.isEmpty())
-        return answer(json, "usage: syncwatch resume [--json]", out, err);
+        return answer(json, "usage: drivesync resume [--json]", out, err);
     const QString file = pauseFilePath(paths.appState);
     if (!clearPause(file))
         return answer(json, QString("cannot remove %1").arg(file), out, err);
@@ -180,13 +185,13 @@ int runRunCommand(const BackendPaths &paths, QTextStream &err) {
     if (!arguments.isEmpty() && rclone.isEmpty())
         error = "rclone was not found";
     if (arguments.isEmpty() || rclone.isEmpty()) {
-        err << "syncwatch: did not start rclone: " << error << "\n";
+        err << "drivesync: did not start rclone: " << error << "\n";
         err.flush();
         // In the log too, in rclone's format, so the window and the
         // notification show why this run failed.
         QFile log(config ? config->logFile : paths.log);
         if (log.open(QIODevice::Append))
-            log.write(QString("%1 CRITICAL: SyncWatch did not start rclone: %2\n")
+            log.write(QString("%1 CRITICAL: DriveSync did not start rclone: %2\n")
                           .arg(QDateTime::currentDateTime().toString("yyyy/MM/dd HH:mm:ss"), error)
                           .toUtf8());
         return 1;
@@ -200,7 +205,7 @@ int runRunCommand(const BackendPaths &paths, QTextStream &err) {
         argv << item.data();
     argv << nullptr;
     execv(argv.first(), argv.data());
-    err << "syncwatch: could not start " << rclone << "\n";
+    err << "drivesync: could not start " << rclone << "\n";
     err.flush();
     return 1;
 }

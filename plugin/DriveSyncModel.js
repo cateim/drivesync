@@ -1,7 +1,7 @@
 .pragma library
 
-// Pure logic of the SyncWatch bar widget. The state itself is decided by the
-// app (`syncwatch status --json`); this file only checks what the app printed
+// Pure logic of the DriveSync bar widget. The state itself is decided by the
+// app (`drivesync status --json`); this file only checks what the app printed
 // and turns it into what the bar shows. No QML here, so node:test covers it.
 
 var MAX_ERROR_LENGTH = 200
@@ -59,7 +59,7 @@ function cleanText(value) {
   return text
 }
 
-// What `syncwatch status --json` printed, checked field by field. Output that
+// What `drivesync status --json` printed, checked field by field. Output that
 // is not version 2 of the contract, or has no clock, is not a snapshot.
 function parseSnapshot(raw) {
   var data = null
@@ -125,7 +125,7 @@ function canSyncNow(snapshot) {
   return !!snapshot && snapshot.ok && snapshot.canSyncNow
 }
 
-// A pause needs SyncWatch's own units: the old ones never look at the mark.
+// A pause needs DriveSync's own units: the old ones never look at the mark.
 function canPause(snapshot) {
   return !!snapshot && snapshot.ok && snapshot.managed && !snapshot.paused && !snapshot.resync
 }

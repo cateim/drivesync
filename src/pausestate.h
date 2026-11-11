@@ -4,7 +4,7 @@
 #include <QString>
 
 // A pause is a mark file, not a stopped timer. The timer keeps ticking and
-// "syncwatch run-condition" skips each run while the mark holds, so a pause
+// "drivesync run-condition" skips each run while the mark holds, so a pause
 // survives a reboot and ends by itself at the first tick after its end, with
 // no daemon waiting for it.
 struct PauseMark {

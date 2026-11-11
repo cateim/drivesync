@@ -1,4 +1,4 @@
-# syncwatch - files that never enter the repository
+# drivesync - files that never enter the repository
 
 # ---- Dependencies and build artefacts ----
 # bin/build, bin/test and bin/install (makepkg) all write under build/, which

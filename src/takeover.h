@@ -10,7 +10,7 @@
 #include "syncconfig.h"
 
 // Taking over a drive-sync made by drive-sync.sh: its units, scripts and
-// filters move aside, and SyncWatch's packaged units run the same rclone
+// filters move aside, and DriveSync's packaged units run the same rclone
 // command. Nothing that names the bisync listings changes (remote, folder,
 // work dir), and the filters move with their md5, so no resync is needed.
 
@@ -18,8 +18,8 @@ struct TakeoverPaths {
     QString userUnits;     // ~/.config/systemd/user
     QString binDir;        // ~/.local/bin
     QString oldStateDir;   // ~/.local/state/drive-sync
-    QString appConfigDir;  // ~/.config/syncwatch
-    QString backupRoot;    // ~/.local/share/syncwatch/taken-over
+    QString appConfigDir;  // ~/.config/drivesync
+    QString backupRoot;    // ~/.local/share/drivesync/taken-over
     QString systemctl;
     QString rclone;
     int serviceWaitMs = 20 * 60 * 1000;           // how long to wait for a run to end
@@ -45,7 +45,7 @@ struct TakeoverPlan {
 };
 
 // Reads the old setup and says what a takeover would do, or why it cannot.
-// Anything in the old units that SyncWatch cannot express blocks it, so
+// Anything in the old units that DriveSync cannot express blocks it, so
 // nothing is ever dropped silently.
 TakeoverPlan detectTakeover(const TakeoverPaths &paths, const Snapshot &snapshot);
 
@@ -61,7 +61,7 @@ bool copyFiltersWithMd5(const QString &from, const QString &to, QString *error);
 // carry no drop-in, wait for a run again, move the old filters last, enable
 // the packaged timers. The old filters stay in place until no unit can read
 // them any more, so a run started by hand halfway never finds them missing.
-// A lock file makes "syncwatch sync" refuse while this runs. When a file
+// A lock file makes "drivesync sync" refuse while this runs. When a file
 // cannot be moved back, the rollback stops there and leaves every timer off,
 // because starting the old ones without their filters would cost a resync.
 bool applyTakeover(const TakeoverPaths &paths, const TakeoverPlan &plan, const QDateTime &now, QString *error);
@@ -74,6 +74,6 @@ bool applyTakeover(const TakeoverPaths &paths, const TakeoverPlan &plan, const Q
 // which the old units would not honour.
 bool undoTakeover(const TakeoverPaths &paths, QString *error);
 
-// "syncwatch takeover --check | --apply | --undo [--json]".
+// "drivesync takeover --check | --apply | --undo [--json]".
 int runTakeoverCommand(const QStringList &arguments, const TakeoverPaths &paths, const BackendPaths &backend,
                        QTextStream &out, QTextStream &err);

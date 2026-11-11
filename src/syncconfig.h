@@ -4,7 +4,7 @@
 #include <QStringList>
 #include <optional>
 
-// What SyncWatch runs when it owns drive-sync. A takeover copies every value
+// What DriveSync runs when it owns drive-sync. A takeover copies every value
 // byte for byte from the old unit: the bisync listings are named after the
 // remote and local strings, so changing either one would ask for a resync.
 struct SyncConfig {
@@ -17,7 +17,7 @@ struct SyncConfig {
     QString runOnlyWhen;      // a shell command; the run is skipped when it fails; empty runs always
 };
 
-// ~/.config/syncwatch/config.json
+// ~/.config/drivesync/config.json
 QString defaultSyncConfigPath();
 // Missing, unreadable, another version or a missing field: no config, and
 // error says which.

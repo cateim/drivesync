@@ -43,7 +43,7 @@ BackendPaths BackendPaths::defaults() {
                        "/proc",
                        QStandardPaths::findExecutable("systemctl"),
                        QStandardPaths::findExecutable("find"),
-                       home + "/.local/state/syncwatch"};
+                       home + "/.local/state/drivesync"};
     paths.config = defaultSyncConfigPath();
     paths.self = QCoreApplication::applicationFilePath();
     if (const auto config = loadSyncConfig(paths.config, nullptr)) {
@@ -436,7 +436,7 @@ void Backend::control(const QStringList &arguments) {
         const QJsonObject answer = QJsonDocument::fromJson(output).object();
         if (!answer.value("ok").toBool()) {
             const QString error = answer.value("error").toString();
-            setMessage(error.isEmpty() ? tr("SyncWatch could not do that.") : error);
+            setMessage(error.isEmpty() ? tr("DriveSync could not do that.") : error);
         }
         refresh();
     });

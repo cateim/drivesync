@@ -37,10 +37,10 @@ Rectangle {
         switch (run ? run.causeKind : "") {
         // Same sentences as the headline (StatusPanel.qml), managed or not.
         case "lostListings": return backend.managed
-            ? qsTr("bisync lost its listings, the base of both sides. To recover: syncwatch takeover --undo, then drive-sync.sh resync")
+            ? qsTr("bisync lost its listings, the base of both sides. To recover: drivesync takeover --undo, then drive-sync.sh resync")
             : qsTr("bisync lost its listings, the base of both sides. To recover: drive-sync.sh resync")
         case "outOfSync": return backend.managed
-            ? qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: syncwatch takeover --undo, then drive-sync.sh resync")
+            ? qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: drivesync takeover --undo, then drive-sync.sh resync")
             : qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: drive-sync.sh resync")
         case "error": return run.causeDetail
         case "none": return qsTr("The log has no detail about it.")
