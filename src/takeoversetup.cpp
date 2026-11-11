@@ -46,6 +46,13 @@ void TakeoverSetup::accept() {
     run({"takeover", "--apply", "--json"});
 }
 
+void TakeoverSetup::cancelPending() {
+    if (!m_pending)
+        return;
+    m_pending = false;
+    emit changed();
+}
+
 void TakeoverSetup::run(const QStringList &arguments) {
     auto *process = new QProcess(this);
     const bool applying = arguments.contains("--apply");
@@ -74,7 +81,18 @@ void TakeoverSetup::apply(const QByteArray &output, bool applying) {
         return;
     }
     if (applying) {
+        const QStringList blockers = strings(answer.value("blockers"));
+        if (!answer.value("ok").toBool() && blockers == QStringList{"running"}) {
+            // Runs take about half of each tick, so one often starts while
+            // the dialog is open. Nothing moved: wait for it, then go on.
+            m_state = "blocked";
+            m_blockers = blockers;
+            m_pending = true;
+            emit changed();
+            return;
+        }
         if (!answer.value("ok").toBool()) {
+            m_pending = false;
             m_state = "failed";
             m_detail = answer.value("error").toString();
             emit changed();
@@ -96,5 +114,13 @@ void TakeoverSetup::apply(const QByteArray &output, bool applying) {
         m_state = state;
     else
         m_state = "failed";
+    // Anything but a run in the way needs the user to look again.
+    if (m_state != "offer" && m_blockers != QStringList{"running"})
+        m_pending = false;
+    if (m_pending && m_state == "offer") {
+        m_pending = false;
+        accept();
+        return;
+    }
     emit changed();
 }

@@ -2042,6 +2042,61 @@ private slots:
         QTRY_COMPARE(confused.state(), QString("failed"));
     }
 
+    // Seen live on 2026-11-10: a run started while the dialog was open, and
+    // the confirmed takeover ended as "failed: running".
+    void takeoverSetupWaitsForARunAfterTheConfirmation()
+    {
+        QTemporaryDir dir;
+        const QByteArray offer = R"({"ok":true,"error":"","state":"found","found":["/a"],"blockers":[]})";
+        const QByteArray running = R"({"ok":false,"error":"running","state":"found","found":["/a"],"blockers":["running"]})";
+        TakeoverSetup setup(fakeSyncwatch(dir.path(), offer));
+        setup.check();
+        QTRY_COMPARE(setup.state(), QString("offer"));
+        write(dir.filePath("answer.json"), running);
+        setup.accept();
+        QTRY_COMPARE(setup.state(), QString("blocked"));
+        QVERIFY(setup.pending());
+
+        // Still running at the next look: still waiting, nothing applied.
+        setup.check();
+        QTRY_COMPARE(calls(dir.path()).size(), 3);
+        QVERIFY(setup.pending());
+
+        // The run ended: the next look applies without asking again.
+        write(dir.filePath("answer.json"), offer);
+        setup.check();
+        QTRY_COMPARE(calls(dir.path()).count("syncwatch takeover --apply --json"), 2);
+        QVERIFY(!setup.pending());
+
+        // Cancelled while waiting: the next offer is only an offer.
+        QTemporaryDir other;
+        TakeoverSetup cancelled(fakeSyncwatch(other.path(), offer));
+        cancelled.check();
+        QTRY_COMPARE(cancelled.state(), QString("offer"));
+        write(other.filePath("answer.json"), running);
+        cancelled.accept();
+        QTRY_VERIFY(cancelled.pending());
+        cancelled.cancelPending();
+        write(other.filePath("answer.json"), offer);
+        cancelled.check();
+        QTRY_COMPARE(cancelled.state(), QString("offer"));
+        QCOMPARE(calls(other.path()).count("syncwatch takeover --apply --json"), 1);
+
+        // Blocked by something else than a run: the confirmation is dropped.
+        QTemporaryDir third;
+        TakeoverSetup dropped(fakeSyncwatch(third.path(), offer));
+        dropped.check();
+        QTRY_COMPARE(dropped.state(), QString("offer"));
+        write(third.filePath("answer.json"), running);
+        dropped.accept();
+        QTRY_VERIFY(dropped.pending());
+        write(third.filePath("answer.json"),
+              R"({"ok":true,"error":"","state":"found","found":["/a"],"blockers":["lastRunNotSuccess"]})");
+        dropped.check();
+        QTRY_COMPARE(dropped.blockers(), QStringList{"lastRunNotSuccess"});
+        QVERIFY(!dropped.pending());
+    }
+
     void backendControlsCallTheCommands()
     {
         QTemporaryDir dir;
