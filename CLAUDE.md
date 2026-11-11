@@ -77,7 +77,7 @@ assets/images/          README pictures: real screens that show no file names; w
 
 ```sh
 bin/build            # about 30 s from clean
-bin/test             # 103 cases, about 5 s (one runs real rclone on temp folders)
+bin/test             # 104 cases, about 5 s (one runs real rclone on temp folders)
 bin/install          # needs sudo (pacman -U); run it in a real terminal
 makepkg -f           # from pkgbuild/, with BUILDDIR and PKGDEST set as in bin/install, to check packaging without sudo
 build/syncwatch status --json   # the state as the bar sees it (0.13 s with a fresh conflict cache)
@@ -155,7 +155,7 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
   `/GitHub/**/build/**`, so every build output (qmake, tests, makepkg) goes
   under `build/`. Do not let makepkg write `pkgbuild/src` or `pkgbuild/pkg`.
 - **The bar widget depends on two names.** It runs `syncwatch status --json`
-  from the PATH, and its `L` key (`plugin/open-history.sh`) focuses the window
+  from the PATH, and its `W` key (`plugin/open-history.sh`) focuses the window
   whose Hyprland class is exactly `syncwatch`. Renaming the binary or changing
   `setDesktopFileName` breaks it, so change the widget in the same commit.
 - `QString::arg` reads `%1000` as placeholder `%10`: build microsecond values

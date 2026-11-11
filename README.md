@@ -100,14 +100,19 @@ its place. Nothing changes on the bar without that key or button, and the
 bar's layout is only changed through `omarchy plugin`. `N` says no, and the
 offer does not come back; delete `~/.local/state/syncwatch/bar-declined` to
 be asked again. After a package upgrade, `omarchy restart shell` loads the new
-widget. In its panel, `S` syncs now and `P` pauses for an hour or resumes.
+widget. In its panel, `S` syncs now, `P` pauses for an hour or resumes, and
+`?` lists every key; hovering an icon says what it does.
 
 ## Taking over drive-sync
 
 When the window finds a drive-sync made by `drive-sync.sh`, it offers to run
 it from SyncWatch (`T`), showing first what moves. Nothing is offered while a
 run is going, after a run that failed, or when the old units have anything
-SyncWatch cannot keep: the window names what stops it.
+SyncWatch cannot keep: the window names what stops it. When the only thing in
+the way is a run, `T` arms the offer, and the dialog opens by itself once the
+run ends (`T` again cancels). A run that starts while the dialog is open does
+not undo the confirmation: the takeover waits for it and then happens by
+itself, and `T` cancels the wait.
 
 - The packaged `drive-sync.service` and `.timer` replace the old ones, and
   `drive-sync-watchdog.timer` replaces `drive-sync-vigia.timer`. A unit in

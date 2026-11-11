@@ -25,5 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Desktop notifications from SyncWatch itself: a critical card with the cause when a run fails, a reminder every hour while it keeps failing, a note when runs work again, an hourly check for a timer that is off, not enabled or not loading, and a daily reminder of a pause with no end.
 - `syncwatch run` refuses to start rclone when the filters' `.md5` is missing or stale, because one bisync run in that state throws its base away until a resync.
 - The status JSON is version 2: `managed`, `paused` and `pausedUntil` join the 17 keys of version 1.
+- `T` during a run arms the takeover: the dialog opens by itself once the run ends, since runs take about half of each 15 minute tick. A takeover confirmed just as a run starts waits for that run and then happens, where it used to fail with "running".
+- `?` in the bar panel lists its keys, in place of the key names beside the icons, which cut the last one off. The key that opens SyncWatch from the panel is now `W`: `l` moved the cursor, so `L` only worked with Shift.
 
 [Unreleased]: https://github.com/CaTeIM/syncwatch/commits/master
