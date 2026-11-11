@@ -157,5 +157,8 @@
   "SyncWatch could not read the drive-sync setup.": "O SyncWatch não conseguiu ler a configuração do drive-sync.",
   "Until 8:00 in the morning": "Até as 8:00 da manhã",
   "SyncWatch's config cannot be read, so no run happens: %1": "A configuração do SyncWatch não pode ser lida, então nenhuma rodada acontece: %1",
-  "The takeover did not happen: %1": "A assunção não aconteceu: %1"
+  "The takeover did not happen: %1": "A assunção não aconteceu: %1",
+  "A run is going. The takeover dialog opens as soon as it ends (T cancels).": "Há uma rodada em andamento. A janela de assunção abre assim que ela acabar (T cancela).",
+  "A run is going. Press T and the takeover dialog opens as soon as it ends.": "Há uma rodada em andamento. Aperte T e a janela de assunção abre assim que ela acabar.",
+  "Takeover confirmed: it happens as soon as this run ends (T cancels).": "Assunção confirmada: ela acontece assim que esta rodada acabar (T cancela)."
 }

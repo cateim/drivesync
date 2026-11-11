@@ -10,6 +10,9 @@ Rectangle {
 
     signal confirmRequested()
 
+    property bool armed: false
+    property bool waitsForRun: false
+
     // Not "state": every Item already has one.
     readonly property string setupState: takeoverSetup.state
     readonly property color accent: theme.accent
@@ -53,7 +56,14 @@ Rectangle {
                 switch (banner.setupState) {
                 case "offer": return qsTr("SyncWatch can run drive-sync itself, with notifications, pause and resume. The same rclone command keeps running, with no resync.")
                 case "working": return qsTr("Taking over drive-sync…")
-                case "blocked": return qsTr("SyncWatch cannot take over drive-sync yet: %1.")
+                case "blocked":
+                    if (banner.waitsForRun && takeoverSetup.pending)
+                        return qsTr("Takeover confirmed: it happens as soon as this run ends (T cancels).")
+                    if (banner.waitsForRun)
+                        return banner.armed
+                            ? qsTr("A run is going. The takeover dialog opens as soon as it ends (T cancels).")
+                            : qsTr("A run is going. Press T and the takeover dialog opens as soon as it ends.")
+                    return qsTr("SyncWatch cannot take over drive-sync yet: %1.")
                                     .arg(takeoverSetup.blockers.map(code => banner.blockerText(code)).join("; "))
                 }
                 return qsTr("The takeover did not happen: %1").arg(takeoverSetup.detail)
@@ -80,7 +90,7 @@ Rectangle {
             onClicked: banner.confirmRequested()
         }
         Label {
-            visible: banner.setupState === "offer"
+            visible: banner.setupState === "offer" || banner.waitsForRun
             text: "T"
             textFormat: Text.PlainText
             color: "#6f6f7a"

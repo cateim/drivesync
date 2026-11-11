@@ -34,8 +34,22 @@ ApplicationWindow {
     }
     Connections {
         target: takeoverSetup
-        function onChanged() { backend.reloadConfig() }
+        function onChanged() {
+            backend.reloadConfig()
+            if (!win.takeoverArmed || takeoverSetup.state === "checking")
+                return
+            win.takeoverArmed = takeoverSetup.state === "blocked" && win.takeoverWaitsForRun
+            if (takeoverSetup.state === "offer" && !win.dialogOpen)
+                takeoverDialog.open()
+        }
     }
+
+    // Runs take about half of each 15 min tick, so the offer is often away
+    // when the user looks. T during a run arms it: the dialog opens by itself
+    // once the run ends and the check finds nothing else in the way.
+    property bool takeoverArmed: false
+    readonly property bool takeoverWaitsForRun: takeoverSetup.state === "blocked"
+        && takeoverSetup.blockers.length === 1 && takeoverSetup.blockers[0] === "running"
 
     function move(step) {
         if (win.page === 0)
@@ -47,7 +61,11 @@ ApplicationWindow {
     // "?" arrives with Shift on most layouts (US, ABNT2), and not every
     // platform plugin matches it against the plain "?".
     Shortcut { sequences: ["?", "Shift+?"]; context: Qt.ApplicationShortcut; onActivated: win.helpVisible = !win.helpVisible }
-    Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: win.helpVisible; onActivated: win.helpVisible = false }
+    Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: win.helpVisible && !win.dialogOpen; onActivated: win.helpVisible = false }
+    // The popups never take focus (their buttons are NoFocus), so their own
+    // closePolicy never sees Esc: the window closes them.
+    Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: pauseMenu.visible; onActivated: pauseMenu.close() }
+    Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: takeoverDialog.visible; onActivated: takeoverDialog.close() }
     Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; onActivated: Qt.quit() }
     Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; onActivated: backend.refresh() }
     Shortcut {
@@ -92,8 +110,15 @@ ApplicationWindow {
     Shortcut {
         sequence: "T"
         context: Qt.ApplicationShortcut
-        enabled: !win.dialogOpen && takeoverSetup.state === "offer"
-        onActivated: takeoverDialog.open()
+        enabled: !win.dialogOpen && (takeoverSetup.state === "offer" || win.takeoverWaitsForRun)
+        onActivated: {
+            if (takeoverSetup.state === "offer")
+                takeoverDialog.open()
+            else if (takeoverSetup.pending)
+                takeoverSetup.cancelPending()
+            else
+                win.takeoverArmed = !win.takeoverArmed
+        }
     }
     Shortcut { sequences: ["Down", "J"]; context: Qt.ApplicationShortcut; onActivated: win.move(1) }
     Shortcut { sequences: ["Up", "K"]; context: Qt.ApplicationShortcut; onActivated: win.move(-1) }
@@ -135,6 +160,8 @@ ApplicationWindow {
 
             TakeoverBanner {
                 Layout.fillWidth: true
+                armed: win.takeoverArmed
+                waitsForRun: win.takeoverWaitsForRun
                 onConfirmRequested: takeoverDialog.open()
             }
 
