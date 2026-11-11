@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# open-history.sh: what the L key and the history button of the SyncWatch bar
+# open-history.sh: what the W key and the history button of the SyncWatch bar
 # widget open. The widget ships inside the SyncWatch package, so the app is
 # always there: focus its window when one is open, otherwise start it.
 #

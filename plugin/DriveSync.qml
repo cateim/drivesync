@@ -31,6 +31,8 @@ Panel {
 
   property int actionIndex: 0
   property bool cursorActive: false
+  // "?" swaps the row of key names, which did not fit, for a list.
+  property bool showKeys: false
 
   readonly property string headline: {
     var s = status
@@ -96,6 +98,7 @@ Panel {
 
   onOpenedChanged: if (opened) {
     cursorActive = false
+    showKeys = false
     sync.refresh()
     Qt.callLater(function() { if (panel.loadedContent) panel.loadedContent.forceActiveFocus() })
   }
@@ -169,9 +172,10 @@ Panel {
         var key = String(t).toLowerCase()
         if (key === "s") root.runAction("sync")
         else if (key === "p") root.runAction("pause")
-        else if (key === "l") root.runAction("log")
+        else if (key === "w") root.runAction("log")
         else if (key === "o") root.runAction("folder")
         else if (key === "r") sync.refresh()
+        else if (key === "?") root.showKeys = !root.showKeys
       }
 
       Column {
@@ -277,12 +281,28 @@ Panel {
             textFormat: Text.PlainText
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignRight
-            text: strings.t("keys.hint")
+            text: strings.t("keys.toggle")
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             elide: Text.ElideRight
           }
+        }
+
+        Column {
+          visible: root.showKeys
+          width: parent.width
+          spacing: Style.spacing.labelGap
+
+          // Not L for the window: lowercase h, j, k and l move the cursor
+          // (PanelKeyCatcher), so it would only arrive with Shift.
+          InfoPair { label: "S"; value: strings.t("keys.sync") }
+          InfoPair { label: "P"; value: strings.t("keys.pause") }
+          InfoPair { label: "W"; value: strings.t("keys.history") }
+          InfoPair { label: "O"; value: strings.t("keys.folder") }
+          InfoPair { label: "R"; value: strings.t("keys.refresh") }
+          InfoPair { label: strings.t("keys.arrowsLabel"); value: strings.t("keys.arrows") }
+          InfoPair { label: "Esc"; value: strings.t("keys.close") }
         }
       }
     }
