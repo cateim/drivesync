@@ -1125,19 +1125,33 @@ private slots:
                                    "--filters-file", "/home/someone/.config/syncwatch/filters.txt",
                                    "--drive-skip-gdocs", "--drive-skip-shortcuts", "--resilient", "--recover",
                                    "--max-lock", "2m", "--max-delete", "5", "--conflict-resolve", "newer",
-                                   "--log-level", "INFO",
+                                   "--log-level", "INFO", "--fast-list",
                                    "--log-file", "/home/someone/.local/state/drive-sync.log"};
         const QStringList arguments = rcloneRunArguments(config);
         QCOMPARE(arguments, expected);
 
-        // The same tokens the real unit passes, filters path aside: no flag invented or dropped.
+        // The same tokens the real unit passes, filters path aside, plus
+        // --fast-list: no other flag invented or dropped.
         QStringList real = QProcess::splitCommand(QString(kOldExecStart)).mid(1);
         real.replace(real.indexOf("/home/someone/.config/rclone/gdrive-filtros.txt"),
                      "/home/someone/.config/syncwatch/filters.txt");
+        real << "--fast-list";
         QStringList a = arguments, b = real;
         std::sort(a.begin(), a.end());
         std::sort(b.begin(), b.end());
         QCOMPARE(a, b);
+    }
+
+    void rcloneArgumentsAddFastListOnce()
+    {
+        SyncConfig config = oldUnitConfig();
+        config.rcloneFlags << "--fast-list";
+        QCOMPARE(rcloneRunArguments(config).count("--fast-list"), 1);
+
+        // Turning ListR off on purpose wins over the default.
+        config = oldUnitConfig();
+        config.rcloneFlags << "--disable" << "ListR";
+        QVERIFY(!rcloneRunArguments(config).contains("--fast-list"));
     }
 
     void filtersUsableRequiresMatchingMd5()

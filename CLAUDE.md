@@ -77,7 +77,7 @@ assets/images/          README pictures: real screens that show no file names; w
 
 ```sh
 bin/build            # about 30 s from clean
-bin/test             # 104 cases, about 5 s (one runs real rclone on temp folders)
+bin/test             # 105 cases, about 5 s (one runs real rclone on temp folders)
 bin/install          # needs sudo (pacman -U); run it in a real terminal
 makepkg -f           # from pkgbuild/, with BUILDDIR and PKGDEST set as in bin/install, to check packaging without sudo
 build/syncwatch status --json   # the state as the bar sees it (0.13 s with a fresh conflict cache)

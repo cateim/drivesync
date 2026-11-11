@@ -27,5 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The status JSON is version 2: `managed`, `paused` and `pausedUntil` join the 17 keys of version 1.
 - `T` during a run arms the takeover: the dialog opens by itself once the run ends, since runs take about half of each 15 minute tick. A takeover confirmed just as a run starts waits for that run and then happens, where it used to fail with "running".
 - `?` in the bar panel lists its keys, in place of the key names beside the icons, which cut the last one off. The key that opens SyncWatch from the panel is now `W`: `l` moved the cursor, so `L` only worked with Shift.
+- `syncwatch run` adds `--fast-list` to the bisync command unless the config turns ListR off. Against Google Drive the listing went from 476 s to 40 s for 33k files, with the same listing, so a run takes about a minute instead of eight; it needs no resync.
 
 [Unreleased]: https://github.com/CaTeIM/syncwatch/commits/master

@@ -97,9 +97,16 @@ bool saveSyncConfig(const QString &path, const SyncConfig &config, QString *erro
 }
 
 QStringList rcloneRunArguments(const SyncConfig &config) {
+    QStringList flags = config.rcloneFlags;
+    // bisync's docs say it lists with --fast-list by default, but against
+    // Google Drive on rclone 1.75 the listing took 476 s without the flag
+    // and 40 s with it (2026-11-10, 33k files, same listing either way).
+    // A config that turns ListR off on purpose keeps it off.
+    if (!flags.contains("--fast-list") && !flags.join(' ').contains("ListR"))
+        flags << "--fast-list";
     return QStringList{"bisync", config.remote, config.localPath, "--workdir", config.workDir,
                        "--filters-file", config.filtersFile}
-           + config.rcloneFlags + QStringList{"--log-file", config.logFile};
+           + flags + QStringList{"--log-file", config.logFile};
 }
 
 bool filtersUsable(const QString &filtersFile, QString *why) {
