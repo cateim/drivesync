@@ -142,12 +142,16 @@ int main(int argc, char **argv) {
         state.stepStarted = QDateTime::currentDateTimeUtc().addSecs(-300);
         if (fix == "confirm") {
             // A big dry run: the dialog lists the first 500 and counts the rest.
-            QByteArray dryRun;
+            QByteArray dryRun =
+                "2026/11/11 12:00:01 NOTICE: - Path1             Resync is copying files to                  - Path2\n"
+                "2026/11/11 12:00:01 NOTICE: Notes/old-draft.md: Skipped copy as --dry-run is set (size 2400)\n"
+                "2026/11/11 12:00:01 NOTICE: Documents/budget-2026.ods: Skipped copy as --dry-run is set (size 18300)\n"
+                "2026/11/11 12:00:01 NOTICE: - Path2             Resync is copying files to                  - Path1\n";
             for (int i = 0; i < 1200; ++i)
                 dryRun += QString("2026/11/11 12:00:01 NOTICE: Photos/2025/trip-%1.jpg: Skipped copy as --dry-run is set "
                                   "(size 2400000)\n").arg(i, 4, 10, QChar('0')).toUtf8();
             put(fixDryRunLogPath(fake.appState), dryRun);
-            state.copies = 1200;
+            state.copies = 1202;
         }
         if (fix == "questions") {
             const qint64 t = QDateTime::currentSecsSinceEpoch();

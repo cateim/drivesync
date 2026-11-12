@@ -7,6 +7,9 @@
 #include <QJsonObject>
 #include <QSaveFile>
 #include <QTimeZone>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 
 namespace {
 
@@ -108,6 +111,21 @@ bool clearFix(const QString &appState) {
     QFile::remove(appState + "/fix-answers.json");  // the window's hand-over, stale from now on
     const QString file = fixStatePath(appState);
     return (!QFile::exists(file) || QFile::remove(file)) && logGone;
+}
+
+FixLock::FixLock(const QString &appState) {
+    if (!QDir().mkpath(appState))
+        return;
+    m_fd = ::open(QFile::encodeName(appState + "/fix.lock").constData(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+    if (m_fd >= 0 && ::flock(m_fd, LOCK_EX) != 0) {
+        ::close(m_fd);
+        m_fd = -1;
+    }
+}
+
+FixLock::~FixLock() {
+    if (m_fd >= 0)
+        ::close(m_fd);  // closing the descriptor releases the flock
 }
 
 bool fixWaiting(const QString &step) { return step == "confirm" || step == "questions"; }

@@ -91,7 +91,7 @@ assets/images/          README pictures: window-*.png from bin/harness over a ma
 
 ```sh
 bin/build            # about 30 s from clean
-bin/test             # 163 cases, about 8 s (two run real rclone on temp folders)
+bin/test             # 170 cases, about 9 s (two run real rclone on temp folders)
 bin/install          # needs sudo (pacman -U); run it in a real terminal
 bin/harness --scenario running --clock "h:mm AP" --out build/shot.png   # the window offscreen, made-up data; options atop tools/harness/harness.cpp
 makepkg -f           # from pkgbuild/, with BUILDDIR and PKGDEST set as in bin/install, to check packaging without sudo
@@ -149,6 +149,11 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
   `fixInterrupted`), but only 60 s after `stepStarted`: `fix` writes the step
   before systemd starts the unit. The `systemctl show` call describes three
   units (service, timer, fix unit), and every reader requires all three.
+- Every writer of `fix.json` (the `fix` command, `fix-run`, the watchdog's
+  reminder) takes `FixLock` (an flock on `fix.lock`) around its read and
+  write, never across a long step. The fix and the takeover find the bisync
+  listings by `bisyncSessionName(remote, local)`, the name rclone gives them
+  (checked against rclone 1.75.2), never "the only pair in the work dir".
 - Runs refused for the filters' md5 have `causeKind` `filtersChanged` (the
   refusal text ends in `kFiltersChangedReason`): a normal card says "press F"
   instead of the critical "stopped syncing" one.

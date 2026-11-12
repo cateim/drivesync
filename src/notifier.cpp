@@ -194,11 +194,16 @@ void remindOfFix(const BackendPaths &paths, const NotifierPaths &tools, const QD
     const FixState state = readFix(paths.appState);
     bool stopped = state.step == "failed";
     if (fixWorking(state.step)) {
-        const bool starting = state.stepStarted.isValid() && state.stepStarted.secsTo(now) < kFixStartGraceSeconds;
-        const QString active =
-            showValue(paths, {"--user", "show", "-p", "ActiveState", "--value", "drive-sync-fix.service"});
-        if (starting || fixUnitBusy({{"ActiveState", active}}))
-            return;  // at work
+        const qint64 age = state.stepStarted.isValid() ? state.stepStarted.secsTo(now) : kFixStartGraceSeconds;
+        QByteArray output;
+        const bool asked = runProcess(paths.systemctl,
+                                      {"--user", "show", "-p", "ActiveState", "--value", "drive-sync-fix.service"},
+                                      kToolTimeoutMs, &output, nullptr);
+        const QString active = QString::fromUtf8(output).trimmed();
+        // Starting, at work, or systemd did not say: no "stopped" card on a guess.
+        if ((age >= 0 && age < kFixStartGraceSeconds) || !asked || active.isEmpty()
+            || fixUnitBusy({{"ActiveState", active}}))
+            return;
         stopped = true;  // the unit left the step halfway
     }
     const QDateTime since = state.stepStarted.isValid() ? state.stepStarted : now;
@@ -206,7 +211,9 @@ void remindOfFix(const BackendPaths &paths, const NotifierPaths &tools, const QD
     if (last.secsTo(now) < kRepeatSeconds)
         return;
     notifyFixNeedsYou(tools, state, stopped);
-    // notify-send can take seconds: a step that moved on in the meantime wins.
+    // notify-send can take seconds: a step that moved on in the meantime wins,
+    // and the lock keeps a confirm from landing between this read and write.
+    const FixLock lock(paths.appState);
     FixState current = readFix(paths.appState);
     if (current.step != state.step || current.stepStarted != state.stepStarted)
         return;

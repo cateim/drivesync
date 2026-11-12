@@ -39,7 +39,13 @@ struct Divergence {
 // precision, and what rclone's check-sync also calls equal).
 QList<Divergence> divergences(const QHash<QString, ListingEntry> &cloud, const QHash<QString, ListingEntry> &notebook);
 
-// The single "<prefix>.path1.lst" (the cloud) and ".path2.lst" (the disk) in
-// the work dir, ignoring the -dry, -old, -err and -new copies; empty when
-// there is not exactly one of each.
-QPair<QString, QString> currentListings(const QString &workDir);
+// The name bisync gives the listings of a pair of paths: each path with its
+// outer slashes trimmed and whitespace, "\", "/", ":", "?" and "*" made "_",
+// joined by "..". Checked against rclone 1.75.2 work dirs on 2026-11-12:
+// "gdrive:" and "/home/someone/Drive" give "gdrive_..home_someone_Drive".
+QString bisyncSessionName(const QString &path1, const QString &path2);
+
+// "<session>.path1.lst" (the cloud) and ".path2.lst" (the disk) in the work
+// dir, never the -dry, -old, -err or -new copies, nor another pair's
+// listings; empty unless both exist.
+QPair<QString, QString> currentListings(const QString &workDir, const QString &session);

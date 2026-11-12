@@ -17,6 +17,7 @@
 
 #include "controlcommands.h"
 #include "fixstate.h"
+#include "listingdiff.h"
 #include "pausestate.h"
 #include "statuscommand.h"
 
@@ -127,10 +128,10 @@ bool readExecCondition(const QString &value, SyncConfig *config) {
     return true;
 }
 
-bool hasListings(const QString &workDir) {
-    const QDir dir(workDir);
-    return dir.entryList({"*.path1.lst"}, QDir::Files).size() == 1
-           && dir.entryList({"*.path2.lst"}, QDir::Files).size() == 1;
+// The listings of these very paths: another pair's, left from an older
+// setup, would not let a normal run start.
+bool hasListings(const SyncConfig &config) {
+    return !currentListings(config.workDir, bisyncSessionName(config.remote, config.localPath)).first.isEmpty();
 }
 
 bool remoteExists(const QString &rclone, const QString &remote) {
@@ -274,7 +275,7 @@ TakeoverPlan detectTakeover(const TakeoverPaths &paths, const Snapshot &snapshot
         for (const QString &folder : {paths.oldStateDir, paths.userUnits, paths.binDir})
             if (path == folder || path.startsWith(folder + "/"))
                 plan.blockers << "pathInsideMoved";
-    if (!hasListings(plan.config.workDir))
+    if (!hasListings(plan.config))
         plan.blockers << "noListings";
     if (!filtersUsable(plan.oldFiltersFile, nullptr))
         plan.blockers << "filtersChanged";
@@ -557,7 +558,7 @@ bool applyTakeover(const TakeoverPaths &paths, const TakeoverPlan &plan, const Q
         return rollBack("a bisync is running outside the unit; try again when it ends");
     if (!filtersUsable(plan.oldFiltersFile, &why))
         return rollBack(why);
-    if (!hasListings(plan.config.workDir))
+    if (!hasListings(plan.config))
         return rollBack("the bisync listings are gone");
 
     if (!copyFiltersWithMd5(plan.oldFiltersFile, plan.config.filtersFile, &why))

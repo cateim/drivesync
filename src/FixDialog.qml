@@ -14,7 +14,7 @@ Popup {
                                  : backend.fixStep === "confirm" ? "confirm"
                                  : "start"
     readonly property bool hasFix: backend.fixStep !== ""
-    readonly property int hidden: Math.max(0, backend.fixCopies - backend.fixCopyPaths.length)
+    readonly property int hidden: Math.max(0, backend.fixCopies - backend.fixCopyList.length)
     // The first path shown in the list, moved by the arrows and J K.
     property int top: 0
     onOpened: {
@@ -109,11 +109,23 @@ Popup {
                     return backend.fixCopies === 0
                         ? qsTr("The dry run found nothing to copy: the base run only writes new listings.")
                         : qsTr("The dry run says the base run would make %Ln copies, each side getting what it lacks and the newer file winning:", "", backend.fixCopies)
-                const why = backend.causeKind === "fixInterrupted"
-                    ? qsTr("It stopped halfway: a logout, a shutdown or a kill.")
-                    : backend.fixError
+                const why = backend.causeKind !== "fixInterrupted" ? backend.fixError
+                    : backend.causeDetail === "the fix stopped halfway" ? qsTr("It stopped halfway: a logout, a shutdown or a kill.")
+                    : qsTr("drive-sync-fix.service ended with %1. See: journalctl --user -u drive-sync-fix.service").arg(backend.causeDetail)
                 return why + "\n" + qsTr("Retry goes on from the same step. Runs wait until the fix ends or you cancel it.")
             }
+        }
+        Label {
+            Layout.fillWidth: true
+            visible: dialog.mode === "confirm" && backend.fixCopies > 0
+            // Copies to the notebook are where a file deleted there would come
+            // back, so they are counted apart and listed first.
+            text: qsTr("To the notebook: %1, listed first. To the cloud: %2.")
+                      .arg(Number(backend.fixCopiesToNotebook).toLocaleString(Qt.locale(), "f", 0))
+                      .arg(Number(backend.fixCopies - backend.fixCopiesToNotebook).toLocaleString(Qt.locale(), "f", 0))
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: backend.fixCopiesToNotebook > 0 ? "#ffb74d" : "#c4c4cc"
         }
         ListView {
             id: copies
@@ -122,15 +134,16 @@ Popup {
             Layout.preferredHeight: Math.min(contentHeight, 240)
             clip: true
             // At most 500 paths: the backend never hands the whole log over.
-            model: dialog.mode === "confirm" ? backend.fixCopyPaths : []
+            model: dialog.mode === "confirm" ? backend.fixCopyList : []
             delegate: Label {
-                required property string modelData
+                required property var modelData
                 width: ListView.view.width
-                text: "  " + modelData
+                // ↓ to the notebook, ↑ to the cloud.
+                text: (modelData.toNotebook ? "↓ " : "↑ ") + modelData.path
                 textFormat: Text.PlainText
                 font.family: "monospace"
                 font.pixelSize: 12
-                color: "#d4d4dc"
+                color: modelData.toNotebook ? "#ffcc80" : "#d4d4dc"
                 elide: Text.ElideMiddle
             }
             ScrollBar.vertical: ScrollBar {}

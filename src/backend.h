@@ -57,7 +57,10 @@ class Backend : public QObject {
     // dry run would copy, and the files it asks about.
     Q_PROPERTY(QString fixStep READ fixStep NOTIFY fixChanged)
     Q_PROPERTY(int fixCopies READ fixCopies NOTIFY fixChanged)
-    Q_PROPERTY(QStringList fixCopyPaths READ fixCopyPaths NOTIFY fixChanged)
+    // At most 500 of the dry run's copies, as {path, toNotebook}, the copies
+    // to the notebook first; and how many of all of them go to the notebook.
+    Q_PROPERTY(QVariantList fixCopyList READ fixCopyList NOTIFY fixChanged)
+    Q_PROPERTY(int fixCopiesToNotebook READ fixCopiesToNotebook NOTIFY fixChanged)
     Q_PROPERTY(QVariantList fixQuestions READ fixQuestions NOTIFY fixChanged)
     Q_PROPERTY(QString fixError READ fixError NOTIFY fixChanged)
     // The base run already ran: cancelling now throws it away, and the next
@@ -90,7 +93,8 @@ public:
     QString message() const { return m_message; }
     QString fixStep() const { return m_fix.step; }
     int fixCopies() const { return m_fix.copies; }
-    QStringList fixCopyPaths() const { return m_fixCopyPaths; }
+    QVariantList fixCopyList() const { return m_fixCopyList; }
+    int fixCopiesToNotebook() const { return m_fixCopiesToNotebook; }
     QVariantList fixQuestions() const;
     QString fixError() const { return m_fix.error; }
     bool fixBaseDone() const {
@@ -113,11 +117,13 @@ public:
     Q_INVOKABLE void pauseUntilTomorrow();
     Q_INVOKABLE void pauseUntilResumed();
     Q_INVOKABLE void resume();
-    // "drivesync fix", step by step. answerFix takes {"<path>": "cloud" |
-    // "notebook"} and hands it over through <appState>/fix-answers.json.
+    // "drivesync fix", step by step. answerFix takes "cloud" or "notebook"
+    // for each question, in the order of fixQuestions, and hands them over
+    // through <appState>/fix-answers.json. By position, not by name: a file
+    // called "__proto__" or "constructor" would break a JavaScript object.
     Q_INVOKABLE void startFix();
     Q_INVOKABLE void confirmFix();
-    Q_INVOKABLE void answerFix(const QVariantMap &answers);
+    Q_INVOKABLE void answerFix(const QStringList &answers);
     Q_INVOKABLE void cancelFix();
     Q_INVOKABLE void retryFix();
     // Reads the config again after a takeover or an undo, so the window
@@ -185,5 +191,6 @@ private:
     int m_typicalSeconds = 0;
     QString m_message;
     FixState m_fix;
-    QStringList m_fixCopyPaths;
+    QVariantList m_fixCopyList;
+    int m_fixCopiesToNotebook = 0;
 };

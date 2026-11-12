@@ -23,9 +23,16 @@
 QStringList fixResyncArguments(const SyncConfig &config, bool dryRun, const QString &logFile);
 // "gdrive:" + "a/b.txt" -> "gdrive:a/b.txt"; "gdrive:sub" -> "gdrive:sub/a/b.txt".
 QString remoteFile(const QString &remote, const QString &path);
-// The paths of the "Skipped copy as --dry-run" lines, at most limit of them,
-// in order; *total gets how many there are in all.
-QStringList dryRunCopies(const QByteArray &log, int limit, int *total);
+struct DryRunCopy {
+    QString path;
+    bool toNotebook = false;  // from the cloud to ~/Drive; else the other way
+};
+// The "Skipped copy as --dry-run" lines of a resync dry run, each with the
+// direction of the "Resync is copying files to" heading above it (rclone
+// 1.75.2). The copies to the notebook come first, since a file deleted there
+// and coming back is among them, then the ones to the cloud, at most limit
+// in all. *total and *toNotebook count every copy.
+QList<DryRunCopy> dryRunCopies(const QByteArray &log, int limit, int *total, int *toNotebook);
 // Why a fix cannot start with this config, or empty.
 QString fixConfigRefusal(const SyncConfig &config);
 

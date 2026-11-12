@@ -73,8 +73,11 @@ Snapshot buildSnapshot(const SnapshotSources &src) {
     if (src.fixPresent) {
         in.fixStep = src.fix.step;
         in.fixError = src.fix.error;
-        const bool starting = src.fix.stepStarted.isValid() && src.fix.stepStarted.secsTo(now) < kFixStartGraceSeconds;
+        // A clock that went back gives a negative age: that is not "just started".
+        const qint64 age = src.fix.stepStarted.isValid() ? src.fix.stepStarted.secsTo(now) : kFixStartGraceSeconds;
+        const bool starting = age >= 0 && age < kFixStartGraceSeconds;
         in.fixInterrupted = fixWorking(src.fix.step) && !src.fixUnitActive && !starting;
+        in.fixUnitResult = src.fixUnitResult;
     }
 
     std::sort(durations.begin(), durations.end());

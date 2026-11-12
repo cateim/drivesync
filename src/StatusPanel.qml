@@ -158,9 +158,9 @@ Rectangle {
                 : qsTr("%Ln files changed in the cloud during the base run. Press F to answer for each one.", "", backend.fixQuestions.length))
             break
         case "fixFailed":
-            lines.push(backend.causeKind === "fixInterrupted"
-                ? qsTr("It stopped halfway: a logout, a shutdown or a kill.")
-                : backend.causeDetail,
+            lines.push(backend.causeKind !== "fixInterrupted" ? backend.causeDetail
+                : backend.causeDetail === "the fix stopped halfway" ? qsTr("It stopped halfway: a logout, a shutdown or a kill.")
+                : qsTr("drive-sync-fix.service ended with %1. See: journalctl --user -u drive-sync-fix.service").arg(backend.causeDetail),
                 qsTr("Press F to retry or cancel it."))
             break
         }

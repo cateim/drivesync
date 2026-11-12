@@ -41,6 +41,23 @@ bool writeFix(const QString &appState, const FixState &state);
 // Also removes the dry-run log and the window's answers file. True also when
 // there was nothing to clear.
 bool clearFix(const QString &appState);
+// Serializes the writers of fix.json (the command, the unit and the
+// watchdog's reminder): each read, change and write happens under an
+// exclusive flock on <appState>/fix.lock, held until this goes out of scope.
+// Never hold one across a long step, and never take a second one in the
+// same process: flock would wait for the first.
+class FixLock {
+public:
+    explicit FixLock(const QString &appState);
+    ~FixLock();
+    FixLock(const FixLock &) = delete;
+    FixLock &operator=(const FixLock &) = delete;
+    bool held() const { return m_fd >= 0; }
+
+private:
+    int m_fd = -1;
+};
+
 // The steps that wait for the user, and the ones the unit works through.
 bool fixWaiting(const QString &step);
 bool fixWorking(const QString &step);

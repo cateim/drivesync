@@ -152,8 +152,10 @@ window or logging out does not stop it halfway:
 
 1. Every run waits from the first step to the last: timer ticks, `S`, `U`
    and the bar's sync are skipped while `fix.json` exists.
-2. A dry run lists what the base run would copy, and nothing changes until
-   you confirm it (`Enter`; `X` cancels the fix).
+2. A dry run lists what the base run would copy, each copy with its
+   direction and the ones to the notebook first (a file you deleted there
+   would come back among them), and nothing changes until you confirm it
+   (`Enter`; `X` cancels the fix).
 3. The base run, a resync where the newer file wins, takes about 40 minutes
    with `~/Drive` still in use.
 4. The two new listings are compared. A file that changed on the notebook

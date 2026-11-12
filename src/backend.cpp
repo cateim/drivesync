@@ -302,6 +302,7 @@ void Backend::recompute() {
             src.fix = readFix(m_paths.appState);
     }
     src.fixUnitActive = fixUnitBusy(m_fixUnit);
+    src.fixUnitResult = m_fixUnit.value("Result");
     updateFix(src.fix);
     // UTC: comparing local times makes Qt look the zone up every time (see
     // toTime in synclog.cpp), and the parsed times carry a fixed offset.
@@ -349,7 +350,13 @@ SyncSummary Backend::summarize(const SyncInputs &in) {
         if (in.fixStep == "failed" || in.fixInterrupted) {
             s.status = "fixFailed";
             s.causeKind = in.fixInterrupted ? "fixInterrupted" : "fix";
-            s.causeDetail = in.fixInterrupted ? QString("the fix stopped halfway") : in.fixError;
+            // A unit that failed on its own says how; a kill (logout,
+            // shutdown) is "signal", which the window words itself.
+            const bool unitFailed = !in.fixUnitResult.isEmpty() && in.fixUnitResult != "success"
+                                    && in.fixUnitResult != "signal";
+            s.causeDetail = !in.fixInterrupted ? in.fixError
+                            : unitFailed       ? in.fixUnitResult
+                                               : QString("the fix stopped halfway");
         } else {
             s.status = fixWaiting(in.fixStep) ? "fixWaiting" : "fixing";
         }
@@ -494,11 +501,16 @@ void Backend::updateFix(const FixState &fix) {
         return;
     // The dry-run log can hold thousands of copies: read once per confirm.
     if (fix.step != "confirm") {
-        m_fixCopyPaths.clear();
-    } else if (m_fix.step != "confirm" || m_fix.stepStarted != fix.stepStarted || m_fixCopyPaths.isEmpty()) {
+        m_fixCopyList.clear();
+        m_fixCopiesToNotebook = 0;
+    } else if (m_fix.step != "confirm" || m_fix.stepStarted != fix.stepStarted || m_fixCopyList.isEmpty()) {
         QFile log(fixDryRunLogPath(m_paths.appState));
         int total = 0;
-        m_fixCopyPaths = log.open(QIODevice::ReadOnly) ? dryRunCopies(log.readAll(), kShownCopies, &total) : QStringList();
+        m_fixCopiesToNotebook = 0;
+        m_fixCopyList.clear();
+        if (log.open(QIODevice::ReadOnly))
+            for (const DryRunCopy &copy : dryRunCopies(log.readAll(), kShownCopies, &total, &m_fixCopiesToNotebook))
+                m_fixCopyList.append(QVariantMap{{"path", copy.path}, {"toNotebook", copy.toNotebook}});
     }
     m_fix = fix;
     emit fixChanged();
@@ -522,11 +534,18 @@ void Backend::confirmFix() { control({"fix", "--confirm"}); }
 void Backend::cancelFix() { control({"fix", "--cancel"}); }
 void Backend::retryFix() { control({"fix", "--retry"}); }
 
-void Backend::answerFix(const QVariantMap &answers) {
+void Backend::answerFix(const QStringList &answers) {
+    if (answers.size() != m_fix.questions.size()) {
+        setMessage(tr("The answers do not match the questions; open them again."));
+        return;
+    }
+    QJsonObject byPath;
+    for (qsizetype i = 0; i < answers.size(); ++i)
+        byPath.insert(m_fix.questions.at(i).path, answers.at(i));
     const QString file = m_paths.appState + "/fix-answers.json";
     QSaveFile out(file);
     if (!QDir().mkpath(m_paths.appState) || !out.open(QIODevice::WriteOnly)
-        || out.write(QJsonDocument(QJsonObject::fromVariantMap(answers)).toJson()) < 0 || !out.commit()) {
+        || out.write(QJsonDocument(byPath).toJson()) < 0 || !out.commit()) {
         setMessage(tr("Cannot write %1.").arg(file));
         return;
     }

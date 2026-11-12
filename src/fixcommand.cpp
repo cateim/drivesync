@@ -45,6 +45,7 @@ QStringList withoutRoutine(const QStringList &flags) {
 
 const QByteArray kDryRunCopy = ": Skipped copy as --dry-run";
 const QByteArray kNotice = "NOTICE: ";
+const QByteArray kResyncHeading = "Resync is copying files to";
 
 }  // namespace
 
@@ -67,9 +68,12 @@ QString remoteFile(const QString &remote, const QString &path) {
     return remote + '/' + path;
 }
 
-QStringList dryRunCopies(const QByteArray &log, int limit, int *total) {
-    QStringList paths;
+QList<DryRunCopy> dryRunCopies(const QByteArray &log, int limit, int *total, int *toNotebook) {
+    QList<DryRunCopy> notebook;
+    QList<DryRunCopy> cloud;
     *total = 0;
+    *toNotebook = 0;
+    bool headingToNotebook = false;
     qsizetype from = 0;
     while (from < log.size()) {
         qsizetype end = log.indexOf('\n', from);
@@ -77,15 +81,25 @@ QStringList dryRunCopies(const QByteArray &log, int limit, int *total) {
             end = log.size();
         const QByteArray line = log.mid(from, end - from);
         from = end + 1;
+        const qsizetype heading = line.indexOf(kResyncHeading);
+        if (heading >= 0) {
+            // "- Path1  Resync is copying files to  - Path2": cloud to notebook.
+            headingToNotebook = line.mid(heading + kResyncHeading.size()).contains("Path2");
+            continue;
+        }
         const qsizetype copy = line.lastIndexOf(kDryRunCopy);
         const qsizetype notice = line.indexOf(kNotice);
         if (copy < 0 || notice < 0 || notice + kNotice.size() > copy)
             continue;
         ++*total;
-        if (paths.size() < limit)
-            paths << QString::fromUtf8(line.mid(notice + kNotice.size(), copy - notice - kNotice.size()));
+        if (headingToNotebook)
+            ++*toNotebook;
+        QList<DryRunCopy> &side = headingToNotebook ? notebook : cloud;
+        if (side.size() < limit)
+            side.append({QString::fromUtf8(line.mid(notice + kNotice.size(), copy - notice - kNotice.size())),
+                         headingToNotebook});
     }
-    return paths;
+    return (notebook + cloud).mid(0, limit);
 }
 
 QString fixConfigRefusal(const SyncConfig &config) {
@@ -299,6 +313,24 @@ QString runBisync(const FixTools &tools, const QStringList &arguments, const QSt
     }
 }
 
+// The config's flags that say how to reach the remote (--config and the
+// --drive-* ones, with their values), for the one-file calls. Without them a
+// touch or a delete could act on another root, or report "not found".
+QStringList remoteFlags(const QStringList &flags) {
+    QStringList kept;
+    for (qsizetype i = 0; i < flags.size(); ++i) {
+        const QString &flag = flags.at(i);
+        const QString name = flag.section('=', 0, 0);
+        if (name != "--config" && !name.startsWith("--drive-"))
+            continue;
+        kept << flag;
+        // A value in the next argument (not a flag itself) goes along.
+        if (!flag.contains('=') && i + 1 < flags.size() && !flags.at(i + 1).startsWith('-'))
+            kept << flags.at(++i);
+    }
+    return kept;
+}
+
 // rclone on one file, and its exit code; -1 when it did not run or crashed.
 int runRcloneFile(const FixTools &tools, const QStringList &arguments, QString *error) {
     QProcess process;
@@ -332,8 +364,9 @@ QString prepareStep(const BackendPaths &paths, const SyncConfig &config, const F
         return error;
     QFile log(dryLog);
     int total = 0;
+    int toNotebook = 0;
     if (log.open(QIODevice::ReadOnly))
-        dryRunCopies(log.readAll(), 0, &total);
+        dryRunCopies(log.readAll(), 0, &total, &toNotebook);
     state->copies = total;
     state->step = "confirm";
     return QString();
@@ -346,9 +379,10 @@ QString baseStep(const SyncConfig &config, const FixTools &tools, FixState *stat
     QString error = runBisync(tools, fixResyncArguments(config, false, config.logFile), config.logFile);
     if (!error.isEmpty())
         return error;
-    const QPair<QString, QString> files = currentListings(config.workDir);
+    const QString session = bisyncSessionName(config.remote, config.localPath);
+    const QPair<QString, QString> files = currentListings(config.workDir, session);
     if (files.first.isEmpty())
-        return QString("cannot find one listing of each side in %1").arg(config.workDir);
+        return QString("bisync left no %1.path1.lst and .path2.lst in %2").arg(session, config.workDir);
     const auto cloud = readListing(files.first, &error);
     if (!cloud)
         return error;
@@ -389,11 +423,16 @@ QString finishStep(const SyncConfig &config, const FixTools &tools, FixState *st
         const QString remote = remoteFile(config.remote, q.path);
         if (q.answer == "cloud") {
             // Newer in the cloud from now on, so the normal run brings it down.
-            if (runRcloneFile(tools, {"touch", "--no-create", remote}, &error) != 0)
+            if (runRcloneFile(tools, QStringList{"touch", "--no-create", remote} + remoteFlags(config.rcloneFlags),
+                              &error)
+                != 0)
                 return QString("could not mark %1 in the cloud: %2").arg(q.path, error);
         } else if (q.answer == "notebook" && q.kind == "onlyCloud") {
             // The notebook does not have it: out of the cloud, into the Drive trash.
-            const int code = runRcloneFile(tools, {"deletefile", remote}, &error);
+            // The Drive trash, whatever rclone.conf or RCLONE_DRIVE_USE_TRASH say.
+            const int code = runRcloneFile(
+                tools, QStringList{"deletefile", remote} + remoteFlags(config.rcloneFlags) + QStringList{"--drive-use-trash=true"},
+                &error);
             if (code != 0 && code != kRcloneNotFound)
                 return QString("could not remove %1 from the cloud: %2").arg(q.path, error);
         } else if (q.answer == "notebook") {
@@ -431,6 +470,8 @@ int runFixCommand(const QStringList &arguments, const BackendPaths &paths, QText
         return commandAnswer(
             json, "usage: drivesync fix --start | --confirm | --answers <file.json> | --cancel | --retry [--json]", out,
             err);
+    // One writer at a time: the unit and the watchdog's reminder take it too.
+    const FixLock lock(paths.appState);
     if (action == "--start")
         return commandAnswer(json, startFix(paths), out, err);
     if (!fixPresent(paths.appState))
@@ -459,7 +500,11 @@ int runFixUnit(const BackendPaths &paths, const SyncConfig &config, const FixToo
     // Read again after every step: the unit works until the fix waits for
     // the user, fails or ends, and a step never repeats on its own.
     for (;;) {
-        FixState state = readFix(paths.appState);
+        FixState state;
+        {
+            const FixLock lock(paths.appState);
+            state = readFix(paths.appState);
+        }
         if (!fixWorking(state.step))
             return state.step == "failed" ? 1 : 0;
         const QString step = state.step;
@@ -479,17 +524,24 @@ int runFixUnit(const BackendPaths &paths, const SyncConfig &config, const FixToo
             state.failedStep = step;
             // A final run that failed can take the new listings with it
             // (moved to -err): retrying it would fail forever.
-            if (step == "finishing" && currentListings(config.workDir).first.isEmpty())
+            if (step == "finishing"
+                && currentListings(config.workDir, bisyncSessionName(config.remote, config.localPath)).first.isEmpty())
                 state.failedStep = "base";
             state.step = "failed";
             state.error = error;
             state.lastReminder = QDateTime::currentDateTimeUtc();
-            writeFix(paths.appState, state);
+            {
+                const FixLock lock(paths.appState);
+                writeFix(paths.appState, state);
+            }
             notifyFixNeedsYou(notify, state, true);
             return 1;
         }
         if (state.step.isEmpty()) {
-            clearFix(paths.appState);
+            {
+                const FixLock lock(paths.appState);
+                clearFix(paths.appState);
+            }
             notifyFixEnded(paths, notify);
             return 0;
         }
@@ -498,7 +550,12 @@ int runFixUnit(const BackendPaths &paths, const SyncConfig &config, const FixToo
         // repeats it every hour from here.
         if (fixWaiting(state.step))
             state.lastReminder = state.stepStarted;
-        if (!writeFix(paths.appState, state))
+        bool written = false;
+        {
+            const FixLock lock(paths.appState);
+            written = writeFix(paths.appState, state);
+        }
+        if (!written)
             return 1;
         if (fixWaiting(state.step))
             notifyFixNeedsYou(notify, state, false);

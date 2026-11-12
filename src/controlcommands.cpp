@@ -99,6 +99,9 @@ int runSyncCommand(const QStringList &arguments, const BackendPaths &paths, QTex
         return answer(json, "usage: drivesync sync [--json]", out, err);
     if (takeoverLockHeld(paths.appState, paths.proc))
         return answer(json, "a takeover is running; sync when it ends", out, err);
+    // run-condition would skip the run anyway: say so instead of "ok".
+    if (fixPresent(paths.appState))
+        return answer(json, "a fix is under way, and it holds every run until it ends", out, err);
     // A pause that ended is cleared by the next run itself, so it does not stop one.
     const PauseMark mark = readPause(pauseFilePath(paths.appState));
     if (paths.managed && mark.present && !pauseEnded(mark, QDateTime::currentDateTimeUtc()))
@@ -145,6 +148,9 @@ int runResumeCommand(const QStringList &arguments, const BackendPaths &paths, QT
     const QString file = pauseFilePath(paths.appState);
     if (!clearPause(file))
         return answer(json, QString("cannot remove %1").arg(file), out, err);
+    // The pause is gone; a fix still holds the runs, and its end brings them back.
+    if (fixPresent(paths.appState))
+        return answer(json, QString(), out, err);
     return answer(json, startOneRun(paths), out, err);
 }
 

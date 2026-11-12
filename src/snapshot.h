@@ -58,6 +58,7 @@ struct SyncInputs {
     QString fixStep;          // the fix's step (fixstate.h), empty when no fix
     bool fixInterrupted = false;  // a working step with drive-sync-fix.service gone
     QString fixError;         // why the fix stopped
+    QString fixUnitResult;    // drive-sync-fix.service's Result, for an interrupted step
 };
 
 struct SyncSummary {
@@ -83,6 +84,7 @@ struct SnapshotSources {
     FixState fix;                     // readFix, when fixPresent
     bool fixPresent = false;
     bool fixUnitActive = false;       // drive-sync-fix.service is starting or running a step
+    QString fixUnitResult;            // its Result: "success", "signal", "exit-code"...
     QDateTime now;                    // UTC
 };
 

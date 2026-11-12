@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <atomic>
+#include <thread>
 
 #include "backend.h"
 #include "clockformat.h"
@@ -346,8 +348,9 @@ QByteArray listingLine(const QString &name, qint64 size, const QDateTime &when) 
 // The listings the fake base run leaves behind.
 bool cannedListings(const QString &dir, const QByteArray &cloud, const QByteArray &notebook) {
     QDir().mkpath(dir + "/canned");
-    return write(dir + "/canned/gdrive_.path1.lst", "# bisync listing v1\n" + cloud)
-           && write(dir + "/canned/gdrive_.path2.lst", "# bisync listing v1\n" + notebook);
+    const QString session = dir + "/canned/" + bisyncSessionName("gdrive:", dir + "/Drive");
+    return write(session + ".path1.lst", "# bisync listing v1\n" + cloud)
+           && write(session + ".path2.lst", "# bisync listing v1\n" + notebook);
 }
 
 // A drive-sync run by DriveSync inside dir, with the fix's fake rclone and
@@ -414,7 +417,8 @@ FixQuestion question(const QString &path, const QString &kind, const QString &an
 // The listings a base run left in the work dir, as finishing finds them.
 bool baseListings(const FixSetup &s) {
     const QByteArray body = "# bisync listing v1\n" + listingLine("a.txt", 1, QDateTime::currentDateTimeUtc().addSecs(-3600));
-    return write(s.config.workDir + "/gdrive_.path1.lst", body) && write(s.config.workDir + "/gdrive_.path2.lst", body);
+    const QString session = s.config.workDir + "/" + bisyncSessionName(s.config.remote, s.config.localPath);
+    return write(session + ".path1.lst", body) && write(session + ".path2.lst", body);
 }
 
 // The modification time of a file, in Unix seconds.
@@ -428,14 +432,17 @@ bool setOldMtime(const QString &path) {
 }
 
 // A systemctl for the watchdog: LoadState, is-active and is-enabled answers.
-QString watchdogSystemctl(const QString &dir, const QString &load, const QString &active, const QString &enabled) {
+QString watchdogSystemctl(const QString &dir, const QString &load, const QString &active, const QString &enabled,
+                          const QString &fixActive = "inactive") {
     const QString path = dir + "/systemctl";
+    // fixActive "fail": systemctl cannot answer about drive-sync-fix.service.
     write(path, QString("#!/bin/sh\n"
                         "case \"$*\" in\n"
+                        "  *drive-sync-fix.service*) [ %4 = fail ] && exit 1; echo %4 ;;\n"
                         "  *LoadState*) echo %1 ;;\n"
                         "  *is-active*) echo %2; [ %2 = active ] ;;\n"
                         "  *is-enabled*) echo %3; [ %3 = enabled ] ;;\n"
-                        "esac\n").arg(load, active, enabled).toUtf8());
+                        "esac\n").arg(load, active, enabled, fixActive).toUtf8());
     QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
     return path;
 }
@@ -486,8 +493,9 @@ OldSetup makeOldSetup(const QString &root) {
     const QByteArray text = "# Gerado pelo drive-sync.sh.\n- .git/**\n";
     write(o.filters, text);
     write(o.filters + ".md5", QCryptographicHash::hash(text, QCryptographicHash::Md5).toHex());
-    write(o.home + "/.local/state/rclone/bisync/gdrive_..home_Drive.path1.lst", "# bisync listing v1\n");
-    write(o.home + "/.local/state/rclone/bisync/gdrive_..home_Drive.path2.lst", "# bisync listing v1\n");
+    const QString session = o.home + "/.local/state/rclone/bisync/" + bisyncSessionName("gdrive:", o.home + "/Drive");
+    write(session + ".path1.lst", "# bisync listing v1\n");
+    write(session + ".path2.lst", "# bisync listing v1\n");
     write(o.home + "/.local/state/drive-sync/aviso", "0 0 0\n");
     write(o.home + "/.local/state/drive-sync.log", "");
 
@@ -2223,7 +2231,8 @@ private slots:
         QCOMPARE(blockersAfter([](OldSetup &, Snapshot &s) { s.lastRunOutcome = "failed"; }),
                  QStringList{"lastRunNotSuccess"});
         QCOMPARE(blockersAfter([](OldSetup &o, Snapshot &) {
-                     QFile::remove(o.home + "/.local/state/rclone/bisync/gdrive_..home_Drive.path2.lst");
+                     QFile::remove(o.home + "/.local/state/rclone/bisync/" + bisyncSessionName("gdrive:", o.home + "/Drive")
+                                   + ".path2.lst");
                  }),
                  QStringList{"noListings"});
         QCOMPARE(blockersAfter([](OldSetup &o, Snapshot &) { write(o.filters, "- changed/**\n"); }),
@@ -3118,13 +3127,17 @@ private slots:
         for (const QString &suffix : QStringList{".path1.lst", ".path1.lst-dry", ".path1.lst-old", ".path1.lst-new", ".path2.lst",
                                       ".path2.lst-err"})
             QVERIFY(write(dir.filePath(prefix + suffix), ""));
-        const QPair<QString, QString> found = currentListings(dir.path());
+        const QPair<QString, QString> found = currentListings(dir.path(), prefix);
         QCOMPARE(found.first, dir.filePath(prefix + ".path1.lst"));
         QCOMPARE(found.second, dir.filePath(prefix + ".path2.lst"));
+        // A stale session of other paths beside it does not get in the way.
         QVERIFY(write(dir.filePath("other.path1.lst"), ""));
         QVERIFY(write(dir.filePath("other.path2.lst"), ""));
-        QCOMPARE(currentListings(dir.path()), (QPair<QString, QString>()));
-        QCOMPARE(currentListings(dir.filePath("missing")), (QPair<QString, QString>()));
+        QCOMPARE(currentListings(dir.path(), prefix).first, dir.filePath(prefix + ".path1.lst"));
+        QCOMPARE(currentListings(dir.path(), "absent"), (QPair<QString, QString>()));
+        QVERIFY(QFile::remove(dir.filePath(prefix + ".path2.lst")));
+        QCOMPARE(currentListings(dir.path(), prefix), (QPair<QString, QString>()));
+        QCOMPARE(currentListings(dir.filePath("missing"), prefix), (QPair<QString, QString>()));
     }
     void fixStateRoundTrips()
     {
@@ -3266,7 +3279,9 @@ private slots:
 
     void dryRunCopiesStopsAtTheLimit()
     {
-        QByteArray log = "2026/11/11 12:00:00 INFO  : Bisyncing with Comparison Settings:\n";
+        // Headings and copy lines as rclone 1.75.2 writes a resync dry run (2026-11-12).
+        QByteArray log = "2026/11/11 12:00:00 INFO  : Bisyncing with Comparison Settings:\n"
+                         "2026/11/11 12:00:00 NOTICE: - Path2             Resync is copying files to                  - Path1\n";
         for (int i = 0; i < 1200; ++i) {
             const QString name = i == 3   ? QString("Odd: name.txt")
                                  : i == 5 ? QString::fromUtf8("Ação.txt")
@@ -3275,17 +3290,28 @@ private slots:
             if (i % 100 == 0)
                 log += "2026/11/11 12:00:01 INFO  : Path1 checking for diffs\n";
         }
+        log += "2026/11/11 12:00:05 NOTICE: - Path1             Resync is copying files to                  - Path2\n";
+        for (const char *name : {"Deleted/on purpose.txt", "Photos/back.jpg"})
+            log += QString("2026/11/11 12:00:06 NOTICE: %1: Skipped copy as --dry-run is set (size 3)\n").arg(name).toUtf8();
         log += "2026/11/11 12:00:09 INFO  : Bisync successful\n";
         int total = 0;
-        const QStringList paths = dryRunCopies(log, 500, &total);
-        QCOMPARE(total, 1200);
-        QCOMPARE(paths.size(), 500);
-        QCOMPARE(paths.first(), QString("Folder/file 0000.txt"));
-        QCOMPARE(paths.at(3), QString("Odd: name.txt"));
-        QCOMPARE(paths.at(5), QString::fromUtf8("Ação.txt"));
-        QCOMPARE(paths.last(), QString("Folder/file 0499.txt"));
-        QVERIFY(dryRunCopies(QByteArray(), 500, &total).isEmpty());
+        int toNotebook = 0;
+        const QList<DryRunCopy> copies = dryRunCopies(log, 500, &total, &toNotebook);
+        QCOMPARE(total, 1202);
+        QCOMPARE(toNotebook, 2);
+        QCOMPARE(copies.size(), 500);
+        // Copies to the notebook come first: a file deleted there and coming back shows among them.
+        QCOMPARE(copies.at(0).path, QString("Deleted/on purpose.txt"));
+        QVERIFY(copies.at(0).toNotebook);
+        QCOMPARE(copies.at(1).path, QString("Photos/back.jpg"));
+        QCOMPARE(copies.at(2).path, QString("Folder/file 0000.txt"));
+        QVERIFY(!copies.at(2).toNotebook);
+        QCOMPARE(copies.at(5).path, QString("Odd: name.txt"));
+        QCOMPARE(copies.at(7).path, QString::fromUtf8("Ação.txt"));
+        QCOMPARE(copies.last().path, QString("Folder/file 0497.txt"));
+        QVERIFY(dryRunCopies(QByteArray(), 500, &total, &toNotebook).isEmpty());
         QCOMPARE(total, 0);
+        QCOMPARE(toNotebook, 0);
     }
 
     void fixRefusesATrashlessConfig()
@@ -3515,7 +3541,9 @@ private slots:
         QCOMPARE(runFixUnit(s.paths, s.config, s.tools, s.notify), 0);
         QVERIFY(!fixPresent(s.paths.appState));
         QStringList rclone = calls(dir.path()).filter(QRegularExpression("^rclone "));
-        QCOMPARE(rclone.mid(0, 2), (QStringList{"rclone touch --no-create gdrive:a.txt", "rclone deletefile gdrive:b b.txt"}));
+        // The config's remote flags go along, and a delete always goes to the Drive trash.
+        QCOMPARE(rclone.mid(0, 2), (QStringList{"rclone touch --no-create gdrive:a.txt --drive-skip-gdocs",
+                                                "rclone deletefile gdrive:b b.txt --drive-skip-gdocs --drive-use-trash=true"}));
         QVERIFY(rclone.at(2).startsWith("rclone bisync"));
         QVERIFY(mtimeOf(s.config.localPath + "/c.txt") >= QDateTime::currentSecsSinceEpoch() - 60);
         QVERIFY(!QFile::exists(s.config.localPath + "/d.txt"));  // gone in the meantime: skipped
@@ -3638,6 +3666,14 @@ private slots:
         QVERIFY2(state.step == "confirm", qPrintable(state.step + ": " + state.error));
         QCOMPARE(state.copies, 2);
         QVERIFY(!QFile::exists(s.config.localPath + "/one.txt"));  // the dry run copied nothing
+        // Real rclone's headings give each copy its direction.
+        int total = 0;
+        int toNotebook = 0;
+        const QList<DryRunCopy> copies = dryRunCopies(readBytes(fixDryRunLogPath(s.paths.appState)), 10, &total, &toNotebook);
+        QCOMPARE(total, 2);
+        QCOMPARE(toNotebook, 1);
+        QCOMPARE(copies.first().path, QString("one.txt"));
+        QVERIFY(copies.first().toNotebook);
 
         QCOMPARE(fixCommand(s, {"--confirm"}), QString());
         QCOMPARE(runFixUnit(s.paths, s.config, s.tools, s.notify), 0);
@@ -3648,6 +3684,8 @@ private slots:
         QVERIFY(QFile::exists(dir.filePath("cloud/two.txt")));
         QVERIFY(!QFile::exists(dir.filePath("cloud/.git/skipped")));
         QVERIFY(QDir(s.config.workDir).entryList({"*-err"}).isEmpty());
+        // The listings carry the name DriveSync computes for these two paths.
+        QVERIFY(QFile::exists(s.config.workDir + "/" + bisyncSessionName(s.config.remote, s.config.localPath) + ".path1.lst"));
         QCOMPARE(runConditionCommand(s.paths, s.config, QDateTime::currentDateTimeUtc()), 0);
         QVERIFY(readBytes(s.config.logFile).contains("Bisync successful"));
     }
@@ -3881,7 +3919,8 @@ private slots:
         QCOMPARE(first.value("cloudTime").toDateTime().toSecsSinceEpoch(), 1762862500LL);
         QVERIFY(!first.value("notebookTime").toDateTime().isValid());
 
-        backend.answerFix({{"a.txt", "cloud"}, {"b.txt", "notebook"}});
+        // One answer per question, in the order fixQuestions lists them.
+        backend.answerFix({"cloud", "notebook"});
         QTRY_COMPARE(calls(dir.path()).filter("drivesync fix --answers").size(), 1);
         const QJsonObject sent = QJsonDocument::fromJson(readBytes(paths.appState + "/fix-answers.json")).object();
         QCOMPARE(sent.value("a.txt").toString(), QString("cloud"));
@@ -3899,14 +3938,15 @@ private slots:
         QTRY_COMPARE(backend.fixStep(), QString("confirm"));
         QVERIFY(!backend.fixBaseDone());
         QCOMPARE(backend.fixCopies(), 1200);
-        QCOMPARE(backend.fixCopyPaths().size(), 500);
-        QCOMPARE(backend.fixCopyPaths().first(), QString("f0.txt"));
+        QCOMPARE(backend.fixCopyList().size(), 500);
+        QCOMPARE(backend.fixCopyList().first().toMap().value("path").toString(), QString("f0.txt"));
+        QCOMPARE(backend.fixCopiesToNotebook(), 0);
         QVERIFY(spy.count() >= 1);
         backend.confirmFix();
         QTRY_COMPARE(calls(dir.path()).filter("drivesync fix --confirm --json").size(), 1);
         QVERIFY(clearFix(paths.appState));
         QTRY_COMPARE(backend.fixStep(), QString());
-        QVERIFY(backend.fixCopyPaths().isEmpty());
+        QVERIFY(backend.fixCopyList().isEmpty());
         QTRY_COMPARE(backend.status(), QString("ok"));
         backend.startFix();
         QTRY_COMPARE(calls(dir.path()).filter("drivesync fix --start --json").size(), 1);
@@ -3959,8 +3999,7 @@ private slots:
         QVERIFY(write(s.config.filtersFile + ".md5",
                       QCryptographicHash::hash(readBytes(s.config.filtersFile), QCryptographicHash::Md5).toHex()));
         const QDateTime when = QDateTime::currentDateTimeUtc().addSecs(-3600);
-        QVERIFY(write(s.config.workDir + "/gdrive_.path1.lst", "# bisync listing v1\n" + listingLine("a.txt", 1, when)));
-        QVERIFY(write(s.config.workDir + "/gdrive_.path2.lst", "# bisync listing v1\n" + listingLine("a.txt", 1, when)));
+        QVERIFY(baseListings(s));
         QVERIFY(write(dir.filePath("normal-fails"), ""));
         QVERIFY(write(dir.filePath("normal-loses-listings"), ""));
         QVERIFY(writeFix(s.paths.appState, fixAt("finishing")));
@@ -3987,6 +4026,132 @@ private slots:
         QTRY_COMPARE(backend.status(), QString("ok"));
         QVERIFY(writeFix(paths.appState, fixAt("confirm")));
         QTRY_COMPARE_WITH_TIMEOUT(backend.fixStep(), QString("confirm"), 3000);
+    }
+    void syncAndResumeDuringAFix()
+    {
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        QVERIFY(writeFix(paths.appState, fixAt("questions")));
+        QString out, err;
+        QTextStream o(&out), e(&err);
+        QCOMPARE(runSyncCommand({}, paths, o, e), 1);
+        QVERIFY2(err.contains("fix"), qPrintable(err));
+        QVERIFY(calls(dir.path()).isEmpty());
+        // Resume still ends the pause, but starts no run the fix would skip.
+        PauseMark mark;
+        mark.present = true;
+        QVERIFY(writePause(pauseFilePath(paths.appState), mark));
+        QCOMPARE(runResumeCommand({}, paths, o, e), 0);
+        QVERIFY(!readPause(pauseFilePath(paths.appState)).present);
+        QVERIFY(calls(dir.path()).isEmpty());
+    }
+
+    void watchdogSkipsAFixItCannotAsk()
+    {
+        QTemporaryDir dir;
+        BackendPaths paths = controlPaths(dir.path(), true);
+        paths.systemctl = watchdogSystemctl(dir.path(), "loaded", "active", "enabled", "fail");
+        SyncConfig config = oldUnitConfig();
+        config.runOnlyWhen.clear();
+        const QDateTime now = QDateTime::fromSecsSinceEpoch(1794067200, QTimeZone::UTC);
+        FixState state = fixAt("base");
+        state.stepStarted = now;
+        QVERIFY(writeFix(paths.appState, state));
+        // systemd did not answer: the fix may well be at work, so no "stopped" card.
+        QCOMPARE(runWatchdogCommand(paths, config, fakeNotifier(dir.path()), now.addSecs(7200)), 0);
+        QVERIFY(notifications(dir.path()).filter("Drive fix").isEmpty());
+    }
+
+    void snapshotFixKeepsItsFeetWhenTheClockMoves()
+    {
+        const QDateTime now(QDate(2026, 11, 11), QTime(12, 0), QTimeZone::UTC);
+        SnapshotSources src = idleSources(successfulRun(now.addSecs(-3600), 480), now);
+        src.managed = true;
+        src.fixPresent = true;
+        src.fix = fixAt("base");
+        // The clock went back an hour after the step began: not "just started".
+        src.fix.stepStarted = now.addSecs(3600);
+        QCOMPARE(buildSnapshot(src).summary.status, QString("fixFailed"));
+        // The unit failed on its own: say how, not "a logout or a kill".
+        src.fix.stepStarted = now.addSecs(-600);
+        src.fixUnitResult = "exit-code";
+        const Snapshot s = buildSnapshot(src);
+        QCOMPARE(s.summary.causeKind, QString("fixInterrupted"));
+        QCOMPARE(s.summary.causeDetail, QString("exit-code"));
+        src.fixUnitResult = "signal";
+        QCOMPARE(buildSnapshot(src).summary.causeDetail, QString("the fix stopped halfway"));
+    }
+    void bisyncSessionNameMatchesRclone()
+    {
+        // Names read off real rclone 1.75.2 work dirs on 2026-11-12.
+        QCOMPARE(bisyncSessionName("gdrive:", "/home/someone/Drive"), QString("gdrive_..home_someone_Drive"));
+        QCOMPARE(bisyncSessionName("/x/a b/", ":local:/y"), QString("x_a_b.._local__y"));
+        QCOMPARE(bisyncSessionName(QString::fromUtf8("/s/ação+(1)~é"), "/s/b@c,d/"),
+                 QString::fromUtf8("s_ação+(1)~é..s_b@c,d"));
+    }
+
+    void takeoverWantsTheListingsOfItsOwnPaths()
+    {
+        QTemporaryDir dir;
+        OldSetup old = makeOldSetup(dir.path());
+        const QString work = old.home + "/.local/state/rclone/bisync/";
+        const QString session = bisyncSessionName("gdrive:", old.home + "/Drive");
+        QVERIFY(QFile::rename(work + session + ".path1.lst", work + "gdrive_..elsewhere.path1.lst"));
+        QVERIFY(QFile::rename(work + session + ".path2.lst", work + "gdrive_..elsewhere.path2.lst"));
+        QVERIFY(detectTakeover(old.paths, settledSnapshot()).blockers.contains("noListings"));
+    }
+    void backendAnswersByPosition()
+    {
+        // File names that mean something to JavaScript objects stay plain names.
+        QTemporaryDir dir;
+        const QDateTime start = QDateTime::currentDateTime().addSecs(-600);
+        QDir(dir.path()).mkpath("Drive");
+        QVERIFY(write(dir.filePath("drive-sync.log"), successfulRun(start, 480).toUtf8()));
+        BackendPaths paths{dir.filePath("drive-sync.log"), dir.filePath("Drive"), dir.filePath("state"),
+                           dir.filePath("proc"), fakeSystemctl(dir.path(), start),
+                           QStandardPaths::findExecutable("find"), dir.filePath("app")};
+        paths.managed = true;
+        paths.self = fakeDrivesync(dir.path(), "{}");
+        FixState state = fixAt("questions");
+        state.questions = {question("__proto__", "differs"), question("constructor", "onlyCloud")};
+        QVERIFY(writeFix(paths.appState, state));
+        Backend backend(paths);
+        QTRY_COMPARE(backend.fixStep(), QString("questions"));
+        backend.answerFix({"notebook", "cloud"});
+        QTRY_COMPARE(calls(dir.path()).filter("drivesync fix --answers").size(), 1);
+        const QJsonObject sent = QJsonDocument::fromJson(readBytes(paths.appState + "/fix-answers.json")).object();
+        QCOMPARE(sent.value("__proto__").toString(), QString("notebook"));
+        QCOMPARE(sent.value("constructor").toString(), QString("cloud"));
+        // A count that does not match the questions sends nothing.
+        backend.answerFix({"cloud"});
+        QTest::qWait(300);
+        QCOMPARE(calls(dir.path()).filter("drivesync fix --answers").size(), 1);
+        QVERIFY(!backend.message().isEmpty());
+    }
+    void fixWritersTakeTheLock()
+    {
+        QTemporaryDir dir;
+        FixSetup s = makeFixSetup(dir.path());
+        QVERIFY(writeFix(s.paths.appState, fixAt("confirm")));
+        std::atomic<bool> done{false};
+        QString error = "not run";
+        std::thread confirm;
+        {
+            // Another writer (the watchdog, say) is in the middle of a change.
+            FixLock held(s.paths.appState);
+            QVERIFY(held.held());
+            confirm = std::thread([&] {
+                error = fixCommand(s, {"--confirm"});
+                done = true;
+            });
+            QTest::qWait(400);
+            QVERIFY(!done);
+            QCOMPARE(readFix(s.paths.appState).step, QString("confirm"));
+        }
+        confirm.join();
+        QVERIFY(done);
+        QCOMPARE(error, QString());
+        QCOMPARE(readFix(s.paths.appState).step, QString("base"));
     }
 };
 

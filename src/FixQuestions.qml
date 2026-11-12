@@ -11,13 +11,15 @@ Popup {
     id: dialog
 
     property double now: Date.now()
-    property var answers: ({})
+    // One answer per question, by position: an object keyed by file name
+    // would trip on names like "__proto__" or "constructor".
+    property var answers: []
     property int current: 0
     readonly property var questions: backend.fixQuestions
     readonly property int answered: {
         let count = 0
         for (let i = 0; i < questions.length; ++i)
-            if (answers[questions[i].path])
+            if (answers[i])
                 ++count
         return count
     }
@@ -57,7 +59,7 @@ Popup {
 
     // Another set of questions (a retried base run) starts over.
     onQuestionsChanged: {
-        answers = ({})
+        answers = []
         current = 0
     }
     onOpened: now = Date.now()
@@ -72,8 +74,8 @@ Popup {
     function choose(side) {
         if (questions.length === 0)
             return
-        const next = Object.assign({}, answers)
-        next[questions[current].path] = side
+        const next = answers.slice()
+        next[current] = side
         answers = next
         move(1)
     }
@@ -81,7 +83,7 @@ Popup {
     function send() {
         if (!complete || enterGuard)
             return
-        backend.answerFix(answers)
+        backend.answerFix(answers.map(answer => answer || ""))
         close()
     }
 
@@ -96,9 +98,9 @@ Popup {
         return qsTr("%1, %2").arg(Format.when(time, now, clockFormat.timeFormat)).arg(Format.size(size))
     }
 
-    function answerText(question) {
+    function answerText(question, index) {
         translator.language
-        const answer = answers[question.path]
+        const answer = answers[index]
         if (answer === "cloud")
             return qsTr("Keep the cloud's")
         if (answer === "notebook")
@@ -157,10 +159,10 @@ Popup {
                             elide: Text.ElideMiddle
                         }
                         Label {
-                            text: dialog.answerText(row.modelData)
+                            text: dialog.answerText(row.modelData, row.index)
                             textFormat: Text.PlainText
                             font.pixelSize: 13
-                            color: dialog.answers[row.modelData.path] ? theme.accent : "#8a8a94"
+                            color: dialog.answers[row.index] ? theme.accent : "#8a8a94"
                         }
                     }
                     Label {

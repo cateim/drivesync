@@ -3,6 +3,7 @@
 #include <QDate>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QRegularExpression>
 #include <algorithm>
 
@@ -211,11 +212,23 @@ QList<Divergence> divergences(const QHash<QString, ListingEntry> &cloud, const Q
     return found;
 }
 
-QPair<QString, QString> currentListings(const QString &workDir) {
+QString bisyncSessionName(const QString &path1, const QString &path2) {
+    static const QRegularExpression unsafe(R"([\s\\/:?*])");
+    const auto canonical = [](QString path) {
+        while (path.startsWith('/') || path.startsWith('\\'))
+            path.remove(0, 1);
+        while (path.endsWith('/') || path.endsWith('\\'))
+            path.chop(1);
+        return path.replace(unsafe, "_");
+    };
+    return canonical(path1) + ".." + canonical(path2);
+}
+
+QPair<QString, QString> currentListings(const QString &workDir, const QString &session) {
     const QDir dir(workDir);
-    const QStringList cloud = dir.entryList({"*.path1.lst"}, QDir::Files | QDir::Hidden);
-    const QStringList notebook = dir.entryList({"*.path2.lst"}, QDir::Files | QDir::Hidden);
-    if (cloud.size() != 1 || notebook.size() != 1)
+    const QString cloud = dir.filePath(session + ".path1.lst");
+    const QString notebook = dir.filePath(session + ".path2.lst");
+    if (!QFileInfo(cloud).isFile() || !QFileInfo(notebook).isFile())
         return {};
-    return {dir.filePath(cloud.first()), dir.filePath(notebook.first())};
+    return {cloud, notebook};
 }

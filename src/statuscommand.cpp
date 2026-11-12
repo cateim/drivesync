@@ -76,6 +76,7 @@ SnapshotSources gatherSources(const BackendPaths &paths, const QDateTime &now, i
         src.service = units.at(0);
         src.timer = units.at(1);
         src.fixUnitActive = fixUnitBusy(units.at(2));
+        src.fixUnitResult = units.at(2).value("Result");
         QByteArray timers;
         if (nextRun && runAndWait(paths.systemctl, listTimersArguments(), timeoutMs, &timers))
             *nextRun = Backend::parseNextElapse(timers);
