@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `?` in the bar panel lists its keys, in place of the key names beside the icons, which cut the last one off. The key that opens DriveSync from the panel is now `W`: `l` moved the cursor, so `L` only worked with Shift.
 - `drivesync run` adds `--fast-list` to the bisync command unless the config turns ListR off. Against Google Drive the listing went from 476 s to 40 s for 33k files, with the same listing, so a run takes about a minute instead of eight; it needs no resync.
 - `bin/harness` draws the window offscreen over a made-up drive-sync and saves it as a PNG, without opening anything on the desktop. The window pictures in the README come from it.
+- The window opens `~/Drive` with `O` or its "Open the folder" button, as the bar does, through the running file manager.
 
 ### 🔧 Changed
 

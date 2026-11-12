@@ -455,6 +455,27 @@ void Backend::setMessage(const QString &message) {
     emit messageChanged();
 }
 
+void Backend::openDriveFolder() {
+    const QString drive = QDir(m_paths.drive).absolutePath();
+    if (!QFileInfo(drive).isDir()) {
+        setMessage(tr("%1 isn't there.").arg(drive));
+        return;
+    }
+    // The running file manager over D-Bus, as for a conflict copy; without
+    // it, whatever opens folders.
+    QDBusMessage call = QDBusMessage::createMethodCall("org.freedesktop.FileManager1", "/org/freedesktop/FileManager1",
+                                                       "org.freedesktop.FileManager1", "ShowFolders");
+    call << QStringList{QUrl::fromLocalFile(drive).toString()} << QString();
+    auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(call, 5000), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [this, watcher, drive] {
+        watcher->deleteLater();
+        if (!watcher->isError())
+            return;
+        if (!QDesktopServices::openUrl(QUrl::fromLocalFile(drive)))
+            setMessage(tr("No file manager answered for %1.").arg(drive));
+    });
+}
+
 void Backend::showInFileManager(const QString &relativePath) {
     const QString absolute = QDir(m_paths.drive).filePath(relativePath);
     if (!QFileInfo::exists(absolute)) {

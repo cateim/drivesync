@@ -56,6 +56,7 @@ also owns `~/.config/drivesync/` and the `drive-sync` user timers.
 | `↑` `↓`, `J` `K` | Move through the list                             |
 | `Enter`          | Show the picked conflict copy in the file manager |
 | `S`              | Sync now                                          |
+| `O`              | Open the Drive folder                             |
 | `P`              | Pause for 1 hour, until 8:00 or until resumed     |
 | `U`              | Resume, and start a run                           |
 | `T`              | Let DriveSync run drive-sync, when offered        |

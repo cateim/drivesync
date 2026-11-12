@@ -63,7 +63,7 @@ src/RunsPage.qml        run list; RunDetail.qml shows the picked run
 src/ConflictsPage.qml   conflict copies
 src/HelpOverlay.qml     "?" overlay
 src/BarBanner.qml       offer to put the widget on the bar (B), or why it could not
-src/ControlsRow.qml     sync now (S), pause (P), resume (U)
+src/ControlsRow.qml     sync now (S), pause (P), resume (U), open ~/Drive (O)
 src/PauseMenu.qml       the three pause lengths (1, 2, 3)
 src/TakeoverBanner.qml  offer to take over (T), or what blocks it; TakeoverDialog.qml confirms
 src/format.js           relative times, durations, sizes
@@ -81,7 +81,7 @@ assets/images/          README pictures: window-*.png from bin/harness over a ma
 
 ```sh
 bin/build            # about 30 s from clean
-bin/test             # 120 cases, about 5 s (one runs real rclone on temp folders)
+bin/test             # 121 cases, about 5 s (one runs real rclone on temp folders)
 bin/install          # needs sudo (pacman -U); run it in a real terminal
 bin/harness --scenario running --clock "h:mm AP" --out build/shot.png   # the window offscreen, made-up data; options atop tools/harness/harness.cpp
 makepkg -f           # from pkgbuild/, with BUILDDIR and PKGDEST set as in bin/install, to check packaging without sudo

@@ -3,8 +3,8 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 
-// Sync now, pause and resume, each with its key. Pause and resume need
-// DriveSync to run drive-sync, so they show only after a takeover.
+// Sync now, pause and resume, and the Drive folder, each with its key. Pause
+// and resume need DriveSync to run drive-sync, so they show only after a takeover.
 RowLayout {
     id: row
 
@@ -51,6 +51,11 @@ RowLayout {
         text: qsTr("Resume")
         key: "U"
         onActivated: backend.resume()
+    }
+    KeyButton {
+        text: qsTr("Open the folder")
+        key: "O"
+        onActivated: backend.openDriveFolder()
     }
     Item { Layout.fillWidth: true }
 }

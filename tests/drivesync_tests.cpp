@@ -2536,6 +2536,20 @@ private slots:
         QVERIFY(!backend.canSyncNow());
     }
 
+    // O with no Drive folder says so instead of opening nothing.
+    void backendOpenDriveFolderSaysWhenItIsMissing()
+    {
+        QTemporaryDir dir;
+        const QDateTime start = QDateTime::currentDateTime().addSecs(-600);
+        QVERIFY(write(dir.filePath("drive-sync.log"), successfulRun(start, 480).toUtf8()));
+        BackendPaths paths{dir.filePath("drive-sync.log"), dir.filePath("Drive"), dir.filePath("state"),
+                           dir.filePath("proc"), fakeSystemctl(dir.path(), start),
+                           QStandardPaths::findExecutable("find"), dir.filePath("app")};
+        Backend backend(paths);
+        backend.openDriveFolder();
+        QCOMPARE(backend.message(), QString("%1 isn't there.").arg(dir.filePath("Drive")));
+    }
+
     void backendSyncNowReportsAFailure()
     {
         QTemporaryDir dir;

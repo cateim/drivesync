@@ -18,6 +18,7 @@ Rectangle {
         { keys: "↑ ↓   J K", what: qsTr("Move through the list") },
         { keys: "Enter", what: qsTr("Show the picked conflict copy in the file manager") },
         { keys: "S", what: qsTr("Sync now") },
+        { keys: "O", what: qsTr("Open the Drive folder") },
         { keys: "P   U", what: qsTr("Pause, and resume, once DriveSync runs drive-sync") },
         { keys: "T", what: qsTr("Let DriveSync run drive-sync, when offered") },
         { keys: "B", what: qsTr("Put DriveSync on the Omarchy bar, when offered") },

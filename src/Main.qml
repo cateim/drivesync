@@ -68,6 +68,7 @@ ApplicationWindow {
     Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: takeoverDialog.visible; onActivated: takeoverDialog.close() }
     Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; onActivated: Qt.quit() }
     Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; onActivated: backend.refresh() }
+    Shortcut { sequence: "O"; context: Qt.ApplicationShortcut; enabled: !win.dialogOpen; onActivated: backend.openDriveFolder() }
     Shortcut {
         sequence: "B"
         context: Qt.ApplicationShortcut

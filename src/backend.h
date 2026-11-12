@@ -85,6 +85,8 @@ public:
     Q_INVOKABLE void refresh();
     // Opens the file manager on a conflict copy, given relative to the drive.
     Q_INVOKABLE void showInFileManager(const QString &relativePath);
+    // ~/Drive itself, as the bar's O opens it.
+    Q_INVOKABLE void openDriveFolder();
     // The same commands the bar and the terminal use; a refusal or a failure
     // shows as the message.
     Q_INVOKABLE void syncNow();
