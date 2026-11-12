@@ -231,3 +231,47 @@ test("the widget changes drive-sync only through drivesync", () => {
   assert.match(qml, /\["drivesync", "resume"\]/)
   assert.doesNotMatch(qml, /"systemctl"/)
 })
+
+test("hoursInFormat reads the hour tokens outside quoted text", () => {
+  assert.equal(model.hoursInFormat("ddd d MMM HH:mm"), "24")
+  assert.equal(model.hoursInFormat("dddd h:mm:ss ap"), "12")
+  assert.equal(model.hoursInFormat("h:mm AP"), "12")
+  assert.equal(model.hoursInFormat("h:mm"), "24")  // Qt's h is 0 to 23 without AM/PM
+  assert.equal(model.hoursInFormat("'at' HH:mm"), "24")
+  assert.equal(model.hoursInFormat("'It''s' h:mm a"), "12")
+  assert.equal(model.hoursInFormat("d MMMM 'W'ww yyyy"), "")
+  assert.equal(model.hoursInFormat(undefined), "")
+})
+
+test("barClockHours follows the clock on the bar", () => {
+  const user = JSON.stringify({ bar: { position: "top", layout: { center: [
+    { id: "omarchy.clock", format: "ddd d MMM h:mm AP", verticalFormat: "HH\nmm" }] } } })
+  assert.equal(model.barClockHours([user], false), "12")
+  assert.equal(model.barClockHours([user], true), "24")  // a side bar shows the vertical format
+  assert.equal(model.barClockHours([JSON.stringify({ bar: { layout: { right: [{ id: "omarchy.clock" }] } } })], false), "24")
+  assert.equal(model.barClockHours([JSON.stringify({ bar: { layout: { left: [{ id: "omarchy.workspaces" }] } } })], false), "")
+  assert.equal(model.barClockHours(["not json", ""], false), "")
+  // A user file without a layout leaves it to Omarchy's defaults.
+  const defaults = JSON.stringify({ bar: { layout: { center: [{ id: "omarchy.clock", format: "h:mm AP" }] } } })
+  assert.equal(model.barClockHours([JSON.stringify({ idle: {} }), defaults], false), "12")
+  assert.equal(model.barClockHours([user, defaults.replace("h:mm AP", "HH:mm")], false), "12")
+})
+
+test("clockTimeFormat falls back when the bar says nothing", () => {
+  assert.equal(model.clockTimeFormat("24", "h:mm AP"), "HH:mm")
+  assert.equal(model.clockTimeFormat("12", "HH:mm"), "h:mm AP")
+  assert.equal(model.clockTimeFormat("", "HH:mm"), "HH:mm")
+})
+
+test("warnings get the window's orange on the bar and in the panel", () => {
+  assert.equal(model.isWarning("warning"), true)
+  for (const state of ["ok", "syncing", "paused", "failing", "broken", "timerOff", "unknown"])
+    assert.equal(model.isWarning(state), false, state)
+  const qml = readFileSync(new URL("../DriveSync.qml", import.meta.url), "utf8")
+  const window = readFileSync(new URL("../../src/StatusPanel.qml", import.meta.url), "utf8")
+  const orange = qml.match(/readonly property color warning: "(#[0-9a-f]{6})"/)
+  assert.ok(orange, "the widget names its warning color")
+  assert.match(window, new RegExp(`"warning" \\? "${orange[1]}"`))
+  assert.match(qml, /activeColor: root\.stateColor/)
+  assert.match(qml, /color: root\.stateColor/)
+})

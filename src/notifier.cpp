@@ -10,6 +10,7 @@
 #include <QStandardPaths>
 #include <QTimeZone>
 
+#include "clockformat.h"
 #include "controlcommands.h"
 #include "pausestate.h"
 #include "snapshot.h"
@@ -55,7 +56,10 @@ void writeProblem(const QString &file, const Problem &p) {
 }
 
 QString at(const NotifierPaths &tools, const QDateTime &when) {
-    return tools.locale.toString(when.toLocalTime(), QLocale::ShortFormat);
+    if (tools.timeFormat.isEmpty())
+        return tools.locale.toString(when.toLocalTime(), QLocale::ShortFormat);
+    return tools.locale.toString(when.toLocalTime(),
+                                 tools.locale.dateFormat(QLocale::ShortFormat) + " " + tools.timeFormat);
 }
 
 // The card's id, or 0 when there is no graphical session to show it.
@@ -200,7 +204,7 @@ void remindOfPause(const BackendPaths &paths, const NotifierPaths &tools, const 
 
 NotifierPaths NotifierPaths::defaults(const QLocale &locale) {
     return {QStandardPaths::findExecutable("notify-send"), QStandardPaths::findExecutable("gdbus"),
-            QStandardPaths::findExecutable("omarchy"), locale};
+            QStandardPaths::findExecutable("omarchy"), locale, currentClockTimeFormat()};
 }
 
 int runNotifyCommand(const QString &serviceResult, const BackendPaths &paths, const NotifierPaths &tools,

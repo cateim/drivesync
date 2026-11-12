@@ -1,0 +1,13 @@
+#!/bin/sh
+# Builds the offscreen harness (tools/harness) and runs it with the given
+# options, e.g. bin/harness --scenario running --out build/shot.png
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build/harness"
+cd "$ROOT/build/harness"
+
+qmake6 "$ROOT/tools/harness/harness.pro" >/dev/null
+make -j"$(nproc)" >/dev/null
+cd "$ROOT"
+exec "$ROOT/build/harness/harness" "$@"

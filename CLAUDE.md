@@ -39,10 +39,12 @@ drivesync.pro           qmake project
 bin/build               qmake6 + make into build/drivesync
 bin/test                builds and runs build/tests/drivesync_tests offscreen
 bin/install             bin/build, then makepkg -fsi with BUILDDIR/PKGDEST under build/
+bin/harness             builds tools/harness into build/harness and runs it with the given options
 src/main.cpp            commands run headless (status, sync, pause, resume, takeover, and run-condition, run, notify, watchdog for the units); otherwise the window
 src/synclog.{h,cpp}     pure parser of the rclone bisync log into SyncRun records
 src/snapshot.{h,cpp}    buildSnapshot(): the one place the state is decided; tone; the JSON contract
 src/backend.{h,cpp}     the window's state: log watch, systemctl calls, conflict scan, headline rules (summarize)
+src/clockformat.{h,cpp}  12 or 24 hours, read from the Omarchy bar clock in shell.json
 src/conflictcache.{h,cpp}  conflict count shared through ~/.local/state/drivesync/conflicts.json
 src/statuscommand.{h,cpp}  `drivesync status [--json]`: same sources, read once, synchronously
 src/syncconfig.{h,cpp}  the config a takeover writes; rclone arguments; filtersUsable (the md5 check)
@@ -67,22 +69,24 @@ src/TakeoverBanner.qml  offer to take over (T), or what blocks it; TakeoverDialo
 src/format.js           relative times, durations, sizes
 src/i18n/*.json         en (plural forms only) and pt-BR
 tests/                  Qt Test suite
+tools/harness/          offscreen harness: the real Main.qml over a made-up drive-sync, saved as a PNG
 plugin/                 Omarchy bar widget (id drivesync), installed to /usr/share/drivesync/omarchy-plugin; reads `drivesync status --json`
 docs/superpowers/       git-ignored, local only: design (specs/) and step plans (plans/)
 pkgbuild/               PKGBUILD, .desktop, units/ (drive-sync and drive-sync-watchdog user units, /usr/lib/systemd/user)
 assets/icons/           launcher icon, installed by the PKGBUILD
-assets/images/          README pictures: real screens that show no file names; window-run-details.png is the offscreen harness over a made-up log
+assets/images/          README pictures: window-*.png from bin/harness over a made-up log; bar-*.png are real screens with no file names
 ```
 
 ## Commands
 
 ```sh
 bin/build            # about 30 s from clean
-bin/test             # 112 cases, about 5 s (one runs real rclone on temp folders)
+bin/test             # 115 cases, about 5 s (one runs real rclone on temp folders)
 bin/install          # needs sudo (pacman -U); run it in a real terminal
+bin/harness --scenario running --clock "h:mm AP" --out build/shot.png   # the window offscreen, made-up data; options atop tools/harness/harness.cpp
 makepkg -f           # from pkgbuild/, with BUILDDIR and PKGDEST set as in bin/install, to check packaging without sudo
 build/drivesync status --json   # the state as the bar sees it (0.13 s with a fresh conflict cache)
-(cd plugin && node --test tests/*.test.mjs)   # bar widget, 18 cases; the glob is required on Node 22
+(cd plugin && node --test tests/*.test.mjs)   # bar widget, 22 cases; the glob is required on Node 22
 build/drivesync takeover --check              # read-only: what a takeover would move, or what blocks it
 omarchy plugin validate plugin                # needs the folder path, not the plugin id
 ```
@@ -124,6 +128,14 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
   `%n`/`%Ln` plurals; add each new one to `src/i18n/pt-BR.json` (and to
   `en.json` when it is plural). Bindings that format times read
   `translator.language`.
+- Clock times show 12 or 24 hours like the clock on the Omarchy bar, never
+  by the language: the `omarchy.clock` entry of `~/.config/omarchy/shell.json`
+  (`format`, or `verticalFormat` on a side bar), with Omarchy's defaults file
+  when the user's has no layout and the system locale when the bar has no
+  clock. The window watches the file (`ClockFormat`, passed to `format.js` as
+  `clockFormat.timeFormat`), the notifications read it once, and the widget
+  reads it with a `FileView`. The rule exists twice, `src/clockformat.cpp` and
+  `plugin/DriveSyncModel.js`: change both together.
 - Corners use `theme.radius`; small elements `Math.min(4, theme.radius)`.
 - Comments explain why, in full sentences, in English.
 - No em or en dashes anywhere (house rule of the owner).
@@ -175,11 +187,15 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
   as numbers, never by appending zeros after `%1`.
 - clangd shows "file not found" for every Qt header because there is no
   `compile_commands.json`; the qmake build is the truth.
-- Looking at the window without touching the desktop: an offscreen harness
-  that loads `qrc:/Main.qml` with fake `BackendPaths` (log, Drive, state dir,
-  a fake `systemctl` script) and a `PluginSetup` with fake `PluginPaths` (a
-  fake `omarchy` script), and saves `window->grabWindow()`. Set
-  `QT_FORCE_STDERR_LOGGING=1` to see QML warnings.
+- Looking at the window without touching the desktop: `bin/harness` loads
+  `qrc:/Main.qml` offscreen with fake `BackendPaths` (a made-up log, Drive,
+  state dir, a fake `systemctl`), a fake `omarchy`, a fake `drivesync` for
+  the takeover check and a fake shell.json clock, presses `--keys`, and
+  saves `window->grabWindow()`; QML warnings go to stderr. It is how the
+  README window pictures are made, so it must never read this machine:
+  `--real` exists for local checks only. A new context property in
+  `main.cpp` needs the same line in `tools/harness/harness.cpp`, and a new
+  source file the window uses needs `tools/harness/harness.pro`.
 - The Material `Button` background (an elevation effect) does not render in
   the offscreen harness; `BarBanner.qml` draws its button's background itself.
 
@@ -189,9 +205,8 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
   (`PluginRegistry.qml` scans `"$dir"/*/`, which follows a symlink). A pacman
   package cannot install there, so `PluginSetup` links
   `~/.config/omarchy/plugins/drivesync` to the package's copy and, after the
-  user agrees (`B`), runs `omarchy plugin enable drivesync` (`--after
-  cateim.drive-sync`, then `disable cateim.drive-sync`, when the older widget
-  is on the bar). A folder or a foreign link at that path is never touched.
+  user agrees (`B`), runs `omarchy plugin enable drivesync`. A folder or a
+  foreign link at that path is never touched.
   `N` says no and is remembered in `~/.local/state/drivesync/bar-declined`:
   no offer and no new link afterwards, so a removal stays removed.
 - A package upgrade reaches the bar only after a shell reload

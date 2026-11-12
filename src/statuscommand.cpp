@@ -125,5 +125,6 @@ QString usageText() {
            "       drivesync pause [--minutes N | --until-tomorrow] [--json]\n"
            "       drivesync resume [--json]\n"
            "       drivesync takeover --check | --apply | --undo [--json]\n"
-           "       drivesync run-condition | run | notify | watchdog    (for the units)\n";
+           "       drivesync run-condition | run | notify | watchdog    (for the units)\n"
+           "       drivesync --help\n";
 }

@@ -10,7 +10,7 @@ Rectangle {
 
     // Not "state": every Item already has one.
     readonly property string setupState: pluginSetup.state
-    readonly property bool offering: setupState === "offer" || setupState === "replaceOffer"
+    readonly property bool offering: setupState === "offer"
     readonly property color accent: theme.accent
 
     visible: offering || setupState === "blocked" || setupState === "failed"
@@ -33,13 +33,12 @@ Rectangle {
             wrapMode: Text.WordWrap
             color: "#c4c4cc"
             text: banner.setupState === "offer" ? qsTr("Show DriveSync on the Omarchy bar, with the state at a glance.")
-                : banner.setupState === "replaceOffer" ? qsTr("DriveSync can take the place of the old Drive widget on the bar.")
                 : banner.setupState === "blocked" ? qsTr("%1 already exists and is not DriveSync's, so the bar was left alone.").arg(pluginSetup.detail)
                 : qsTr("Could not put DriveSync on the bar: %1").arg(pluginSetup.detail)
         }
         Button {
             visible: banner.offering
-            text: banner.setupState === "replaceOffer" ? qsTr("Replace the old Drive widget") : qsTr("Show in the bar")
+            text: qsTr("Show in the bar")
             focusPolicy: Qt.NoFocus
             // Drawn by hand: the Material button background is an elevation
             // effect that does not show up everywhere, and this one action

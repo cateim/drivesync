@@ -106,7 +106,7 @@ Item {
 
                             Label {
                                 Layout.fillWidth: true
-                                text: { translator.language; return Format.when(row.modelData.start, page.now) }
+                                text: { translator.language; return Format.when(row.modelData.start, page.now, clockFormat.timeFormat) }
                                 color: "#ececf1"
                                 font.pixelSize: 15
                                 elide: Text.ElideRight

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Io
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -26,8 +27,33 @@ Panel {
 
   readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
   readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
+  // The theme has no warning color; this is the window's (StatusPanel.qml),
+  // so a warning reads the same on the bar and in the window.
+  readonly property color warning: "#ffb74d"
+  // Urgent states take the bar's urgent color, warnings the orange.
+  readonly property color stateColor: Model.isUrgent(syncState) ? urgent
+                                    : Model.isWarning(syncState) ? warning : foreground
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+
+  // Clock times show 12 or 24 hours like the clock on the bar, the same rule
+  // as the window's. A right click on the clock rewrites shell.json, so the
+  // user's file is watched.
+  readonly property string timeFormat: Model.clockTimeFormat(
+    Model.barClockHours([userShellFile.text(), defaultShellFile.text()], bar ? bar.vertical : false),
+    Qt.locale().timeFormat(Locale.ShortFormat))
+  property FileView userShellFile: FileView {
+    path: (Quickshell.env("HOME") || "") + "/.config/omarchy/shell.json"
+    watchChanges: true
+    printErrors: false
+    blockLoading: true
+    onFileChanged: reload()
+  }
+  property FileView defaultShellFile: FileView {
+    path: (Quickshell.env("OMARCHY_PATH") || "/usr/share/omarchy") + "/config/omarchy/shell.json"
+    printErrors: false
+    blockLoading: true
+  }
 
   property int actionIndex: 0
   property bool cursorActive: false
@@ -56,7 +82,7 @@ Panel {
     var locale = Qt.locale(Commons.I18n.formatLocale)
     var today = new Date((status.now || sec) * 1000)
     var sameDay = when.toDateString() === today.toDateString()
-    return sameDay ? when.toLocaleTimeString(locale, "HH:mm") : when.toLocaleString(locale, "d MMM HH:mm")
+    return sameDay ? when.toLocaleTimeString(locale, root.timeFormat) : when.toLocaleString(locale, "d MMM " + root.timeFormat)
   }
 
   function ago(sec) {
@@ -137,7 +163,8 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     text: Model.glyph(root.syncState)
-    active: Model.isUrgent(root.syncState)
+    active: Model.isUrgent(root.syncState) || Model.isWarning(root.syncState)
+    activeColor: root.stateColor
     dimmed: Model.isDimmed(root.syncState)
     tooltipText: strings.t("tooltip").arg(root.headline)
     onPressed: function(buttonCode) {
@@ -194,7 +221,7 @@ Panel {
             Text {
               textFormat: Text.PlainText
               text: Model.glyph(root.syncState)
-              color: Model.isUrgent(root.syncState) ? root.urgent : root.foreground
+              color: root.stateColor
               font.family: root.fontFamily
               font.pixelSize: Style.font.display
             }

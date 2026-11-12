@@ -18,6 +18,7 @@
 #include <functional>
 
 #include "backend.h"
+#include "clockformat.h"
 #include "conflictcache.h"
 #include "controlcommands.h"
 #include "legacymigration.h"
@@ -1055,37 +1056,6 @@ private slots:
         QVERIFY(calls(dir.path()).isEmpty());
     }
 
-    void pluginSetupOffersReplaceForOldWidget()
-    {
-        QTemporaryDir dir;
-        const PluginPaths paths = fakeOmarchy(dir.path(), R"([{"id":"cateim.drive-sync","enabled":true}])");
-        QDir().mkpath(paths.userPlugins);
-        QVERIFY(QFile::link(paths.shipped, paths.userPlugins + "/drivesync"));
-        PluginSetup setup(paths);
-        setup.check();
-        QTRY_COMPARE(setup.state(), QString("replaceOffer"));
-        QCOMPARE(calls(dir.path()), QStringList{"plugin list --json"});  // the link was there: no rescan
-    }
-
-    void pluginSetupAcceptReplaces()
-    {
-        QTemporaryDir dir;
-        const PluginPaths paths = fakeOmarchy(dir.path(), R"([{"id":"cateim.drive-sync","enabled":true}])");
-        QDir().mkpath(paths.userPlugins);
-        QVERIFY(QFile::link(paths.shipped, paths.userPlugins + "/drivesync"));
-        PluginSetup setup(paths);
-        setup.check();
-        QTRY_COMPARE(setup.state(), QString("replaceOffer"));
-
-        QFile::remove(dir.filePath("calls.log"));
-        QVERIFY(write(dir.filePath("list.json"),
-                      R"([{"id":"drivesync","enabled":true},{"id":"cateim.drive-sync","enabled":false}])"));
-        setup.accept();
-        QTRY_COMPARE(setup.state(), QString("enabled"));
-        QCOMPARE(calls(dir.path()), (QStringList{"plugin enable drivesync --after cateim.drive-sync",
-                                                 "plugin disable cateim.drive-sync", "plugin list --json"}));
-    }
-
     // SyncWatch's widget, renamed: the new one takes its place on the bar by
     // itself, then the old entry and its dangling link go.
     void pluginSetupTakesOverTheSyncWatchWidget()
@@ -1703,6 +1673,91 @@ private slots:
                                              "DriveSync did not start rclone: filters.txt.md5 is missing").toUtf8()));
         QCOMPARE(runNotifyCommand("exit-code", refusedPaths, fakeNotifier(refused.path()), QDateTime::currentDateTimeUtc()), 0);
         QVERIFY(notifications(refused.path()).at(0).contains("filters.txt.md5 is missing"));
+    }
+
+    // The card's time shows the hours of the bar clock, not the language's own.
+    void notifyTimeFollowsTheBarClock()
+    {
+        for (const QString &format : {QString(), QString("HH:mm")}) {
+            QTemporaryDir dir;
+            const BackendPaths paths = controlPaths(dir.path(), true);
+            QVERIFY(write(paths.log, failedRun(QDateTime::currentDateTime().addSecs(-60)).toUtf8()));
+            NotifierPaths tools = fakeNotifier(dir.path());
+            tools.locale = QLocale(QLocale::English, QLocale::UnitedStates);
+            tools.timeFormat = format;
+            QCOMPARE(runNotifyCommand("exit-code", paths, tools, QDateTime::currentDateTimeUtc()), 0);
+            // The time is on the card's second line, so the whole log is read.
+            QFile log(dir.filePath("calls.log"));
+            QVERIFY(log.open(QIODevice::ReadOnly));
+            const QString sent = QString::fromUtf8(log.readAll());
+            QVERIFY(sent.contains("Drive stopped syncing"));
+            static const QRegularExpression amPm("\\d:\\d\\d.?[AP]M");
+            QCOMPARE(sent.contains(amPm), format.isEmpty());
+        }
+    }
+
+    void clockHoursFromAFormat()
+    {
+        QVERIFY(hoursInFormat("ddd d MMM HH:mm") == ClockHours::TwentyFour);
+        QVERIFY(hoursInFormat("dddd h:mm:ss ap") == ClockHours::Twelve);
+        QVERIFY(hoursInFormat("h:mm AP") == ClockHours::Twelve);
+        QVERIFY(hoursInFormat("h:mm") == ClockHours::TwentyFour);  // Qt's h is 0 to 23 without AM/PM
+        // Quoted text is literal: the "a" of "at" is no AM/PM marker.
+        QVERIFY(hoursInFormat("'at' HH:mm") == ClockHours::TwentyFour);
+        QVERIFY(hoursInFormat("'It''s' h:mm a") == ClockHours::Twelve);
+        QVERIFY(hoursInFormat("d MMMM 'W'ww yyyy") == ClockHours::Unknown);
+    }
+
+    void clockHoursFromTheBar()
+    {
+        const QByteArray top = R"({"bar":{"position":"top","layout":{"center":[
+            {"id":"omarchy.clock","format":"ddd d MMM h:mm AP","verticalFormat":"HH\nmm"}]}}})";
+        QVERIFY(barClockHours({top}) == ClockHours::Twelve);
+        // A side bar shows the vertical format.
+        QByteArray side = top;
+        side.replace("\"top\"", "\"left\"");
+        QVERIFY(barClockHours({side}) == ClockHours::TwentyFour);
+        // An entry without a format shows Omarchy's default, 24 hours.
+        QVERIFY(barClockHours({R"({"bar":{"layout":{"right":[{"id":"omarchy.clock"}]}}})"}) == ClockHours::TwentyFour);
+        // No clock on the bar, or nothing readable: the bar says nothing.
+        QVERIFY(barClockHours({R"({"bar":{"layout":{"left":[{"id":"omarchy.workspaces"}]}}})"}) == ClockHours::Unknown);
+        QVERIFY(barClockHours({"not json"}) == ClockHours::Unknown);
+        // A user file without a layout leaves it to Omarchy's defaults, and
+        // its own position still counts.
+        const QByteArray defaults = R"({"bar":{"position":"top","layout":{"center":[
+            {"id":"omarchy.clock","format":"h:mm AP","verticalFormat":"H mm"}]}}})";
+        QVERIFY(barClockHours({R"({"idle":{}})", defaults}) == ClockHours::Twelve);
+        QVERIFY(barClockHours({R"({"bar":{"position":"right"}})", defaults}) == ClockHours::TwentyFour);
+    }
+
+    void clockTimeFormatFallsBackToTheLocale()
+    {
+        const QLocale english(QLocale::English, QLocale::UnitedStates);
+        const QLocale portuguese(QLocale::Portuguese, QLocale::Brazil);
+        QCOMPARE(clockTimeFormat(ClockHours::TwentyFour, english), QString("HH:mm"));
+        QCOMPARE(clockTimeFormat(ClockHours::Twelve, portuguese), QString("h:mm AP"));
+        QCOMPARE(clockTimeFormat(ClockHours::Unknown, portuguese), QString("HH:mm"));
+        QVERIFY(hoursInFormat(clockTimeFormat(ClockHours::Unknown, english)) == ClockHours::Twelve);
+    }
+
+    // A right click on the bar clock rewrites shell.json; the window follows.
+    void clockFormatFollowsShellJson()
+    {
+        QTemporaryDir dir;
+        QVERIFY(QDir().mkpath(dir.filePath("omarchy")));
+        const QString user = dir.filePath("omarchy/shell.json");
+        QVERIFY(write(user, R"({"bar":{"layout":{"center":[{"id":"omarchy.clock","format":"HH:mm"}]}}})"));
+        ClockFormat clock(ClockPaths{{user, dir.filePath("missing-defaults.json")}, QLocale::c()});
+        QCOMPARE(clock.timeFormat(), QString("HH:mm"));
+
+        QSignalSpy changed(&clock, &ClockFormat::changed);
+        // The shell saves by replacing the file.
+        const QString saved = dir.filePath("omarchy/shell.json.tmp");
+        QVERIFY(write(saved, R"({"bar":{"layout":{"center":[{"id":"omarchy.clock","format":"h:mm AP"}]}}})"));
+        QVERIFY(QFile::remove(user));
+        QVERIFY(QFile::rename(saved, user));
+        QTRY_COMPARE(clock.timeFormat(), QString("h:mm AP"));
+        QCOMPARE(changed.count(), 1);
     }
 
     void notifyWithoutASessionRetries()

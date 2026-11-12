@@ -85,7 +85,7 @@ Rectangle {
 
         Label {
             Layout.fillWidth: true
-            text: detail.run ? (translator.language, qsTr("Run at %1").arg(Format.when(detail.run.start, detail.now))) : ""
+            text: detail.run ? (translator.language, qsTr("Run at %1").arg(Format.when(detail.run.start, detail.now, clockFormat.timeFormat))) : ""
             font.pixelSize: 19
             font.weight: Font.DemiBold
             color: "#f4f4f5"

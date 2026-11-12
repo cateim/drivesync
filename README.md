@@ -39,12 +39,13 @@ also owns `~/.config/drivesync/` and the `drive-sync` user timers.
 
 | Run details                                                                                                         | Conflict copies                                                                                                                   |
 | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| <img src="assets/images/window-run-details.png" width="400" alt="A run with what it copied each way, file by file"> | <img src="assets/images/window-conflicts.png" width="400" alt="The conflict copies tab with nothing waiting in the Drive folder"> |
+| <img src="assets/images/window-run-details.png" width="400" alt="A run with what it copied each way, file by file"> | <img src="assets/images/window-conflicts.png" width="400" alt="The conflict copies tab with two copies to sort out, each with its folder, age and size"> |
 
 > [!NOTE]
-> The run details picture is the real app drawn over a made-up log, under
-> another Omarchy theme. The other pictures come from a real machine and show
-> no file names. No real files or names appear in this repository.
+> The window pictures are the real app drawn offscreen over a made-up log
+> (`bin/harness`), under another Omarchy theme. The bar pictures come from a
+> real machine and show no file names. No real files or names appear in this
+> repository.
 
 ## Shortcuts
 
@@ -88,7 +89,7 @@ every few seconds.
 ## Bar widget
 
 <p align="center">
-  <img src="assets/images/bar-panel.png" width="352" alt="The panel of the bar widget: synced at 10:31, the last sync, the last run, the next run, and buttons to sync, open the history and open the folder">
+  <img src="assets/images/bar-panel.png" width="352" alt="The panel of the bar widget: synced at 22:17, the last sync, the last run, the next run, buttons to sync, pause, open DriveSync and open the folder, and ? for the keys">
   <img src="assets/images/bar-tooltip.png" width="242" alt="The cloud on the Omarchy bar with its tooltip: Drive: Synced at 10:31">
 </p>
 

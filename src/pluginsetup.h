@@ -24,15 +24,13 @@ struct PluginPaths {
 };
 
 inline constexpr char kPluginId[] = "drivesync";
-// The widget's id before it moved into the app.
-inline constexpr char kOldPluginId[] = "cateim.drive-sync";
 // The same widget while the app was called SyncWatch, until 2026-11-11.
 inline constexpr char kLegacyPluginId[] = "syncwatch";
 
 class PluginSetup : public QObject {
     Q_OBJECT
     // "checking" | "noOmarchy" | "notShipped" | "blocked" | "offer"
-    // | "replaceOffer" | "enabled" | "declined" | "failed"
+    // | "enabled" | "declined" | "failed"
     Q_PROPERTY(QString state READ state NOTIFY changed)
     Q_PROPERTY(QString detail READ detail NOTIFY changed)
 
@@ -46,8 +44,7 @@ public:
     // Links the widget when the link is missing, then asks Omarchy whether
     // it is on the bar.
     Q_INVOKABLE void check();
-    // Puts the widget on the bar, replacing the old one when it is there.
-    // Only does something after check() offered it.
+    // Puts the widget on the bar. Only does something after check() offered it.
     Q_INVOKABLE void accept();
     // Remembers "no": later starts neither offer nor link the widget, so an
     // `omarchy plugin remove drivesync` stays removed.

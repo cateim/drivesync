@@ -3,21 +3,23 @@
 // Times, durations and sizes in the Omarchy language. Callers pass `now`
 // so relative times move with the window's clock, and read
 // translator.language in the binding so a language switch re-renders them.
+// Clock times take clockFormat.timeFormat, the 12 or 24 hours of the bar
+// clock, read in the binding too so a change on the bar re-renders them.
 
 function valid(date) {
     return !!date && !isNaN(date.getTime())
 }
 
-function clock(date) {
-    return date.toLocaleTimeString(Qt.locale(), Qt.locale().timeFormat(1))
+function clock(date, timeFormat) {
+    return date.toLocaleTimeString(Qt.locale(), timeFormat || Qt.locale().timeFormat(1))
 }
 
 // The clock time alone today, the day and month before it otherwise.
-function when(date, now) {
+function when(date, now, timeFormat) {
     const today = new Date(now)
     if (date.toDateString() === today.toDateString())
-        return clock(date)
-    return qsTr("%1, %2").arg(date.toLocaleDateString(Qt.locale(), "d MMM")).arg(clock(date))
+        return clock(date, timeFormat)
+    return qsTr("%1, %2").arg(date.toLocaleDateString(Qt.locale(), "d MMM")).arg(clock(date, timeFormat))
 }
 
 function ago(date, now) {

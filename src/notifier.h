@@ -22,7 +22,8 @@ struct NotifierPaths {
     QString notifySend;
     QString gdbus;    // closes a card by id
     QString omarchy;  // "omarchy notification dismiss" closes a card already shown, by title
-    QLocale locale;   // for the times in the text
+    QLocale locale;   // for the dates and the AM/PM text
+    QString timeFormat;  // the bar clock's hours (clockformat.h); empty: the locale's own
 
     static NotifierPaths defaults(const QLocale &locale);
 };

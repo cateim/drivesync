@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A state glyph beside the headline: a cloud with a check when in sync, with arrows while syncing, with an alert on trouble.
 - `drivesync status` prints the state without a window, as one line or, with `--json`, as a versioned JSON object for the bar and scripts.
 - A widget for the Omarchy bar, shipped in the package, showing the same state as the window: last sync, last and next run, what failed, conflict copies, and buttons to sync now, open DriveSync and open `~/Drive`.
-- The window links the widget into Omarchy's plugin folder and offers to put it on the bar (`B`), taking the place of an older drive-sync widget when one is there; `N` says no, and the offer does not come back.
+- The window links the widget into Omarchy's plugin folder and offers to put it on the bar (`B`); `N` says no, and the offer does not come back.
 - Follows the Omarchy accent, window rounding and language live; ships English and Brazilian Portuguese.
 - Package with `.desktop` entry and icon, installed by `bin/install`, so the app appears in the Omarchy launcher.
 - Takeover of an existing drive-sync (`T` in the window, `drivesync takeover`): DriveSync's packaged user units run the same rclone command with the same remote, folder, listings and filters (moved with their `.md5`), so no resync is needed. The old units and scripts move to `~/.local/share/drivesync/taken-over/` with a manifest, nothing is deleted, a failed step undoes every step before it (when an old file cannot move back, every drive-sync timer is left off and the error says where it is), and `drivesync takeover --undo` goes back. The window names what blocks a takeover (a run going, a failed last run, units it cannot keep).
@@ -28,9 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `T` during a run arms the takeover: the dialog opens by itself once the run ends, since runs take about half of each 15 minute tick. A takeover confirmed just as a run starts waits for that run and then happens, where it used to fail with "running".
 - `?` in the bar panel lists its keys, in place of the key names beside the icons, which cut the last one off. The key that opens DriveSync from the panel is now `W`: `l` moved the cursor, so `L` only worked with Shift.
 - `drivesync run` adds `--fast-list` to the bisync command unless the config turns ListR off. Against Google Drive the listing went from 476 s to 40 s for 33k files, with the same listing, so a run takes about a minute instead of eight; it needs no resync.
+- `bin/harness` draws the window offscreen over a made-up drive-sync and saves it as a PNG, without opening anything on the desktop. The window pictures in the README come from it.
 
 ### 🔧 Changed
 
 - The app is now DriveSync: the command is `drivesync`, the package `drivesync` (it replaces `syncwatch`), and the bar widget id `drivesync`. The first `drivesync` command moves `~/.config/syncwatch`, `~/.local/state/syncwatch` and `~/.local/share/syncwatch` to `drivesync`, keeping the filters and their `.md5` byte for byte, so no resync is needed, and points the config and the takeover backups at the new folders. The widget takes the old one's place on the bar by itself the first time the window opens.
+
+### 🐛 Fixed
+
+- Clock times show 12 or 24 hours like the clock on the Omarchy bar, in the window, the bar panel and the notifications, and follow a right click on that clock. The window showed AM/PM whenever Omarchy was in English, even with the bar clock on 24 hours, and the panel always showed 24 hours.
+- `drivesync --help` (and `-h`, `help`) prints the usage. It opened the window, like every argument that starts with a dash.
+- A warning on the bar (conflict copies, a late, skipped or interrupted run) turns the cloud and the panel icon orange, the same orange as the window. It looked just like an up-to-date sync.
 
 [Unreleased]: https://github.com/CaTeIM/drivesync/commits/master

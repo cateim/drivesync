@@ -149,6 +149,11 @@ function isUrgent(state) {
   return URGENT_STATES.indexOf(state) !== -1
 }
 
+// Conflicts, a late or skipped run: worth a look, not an alarm.
+function isWarning(state) {
+  return state === "warning"
+}
+
 function isDimmed(state) {
   return DIMMED_STATES.indexOf(state) !== -1
 }
@@ -171,4 +176,81 @@ function clampInt(value, fallback, min, max) {
 function stepAction(index, delta) {
   var n = ACTIONS.length
   return ((index + delta) % n + n) % n
+}
+
+// Clock times show 12 or 24 hours like the clock on the Omarchy bar, the
+// same rule as the app's (src/clockformat.cpp).
+
+// "12" with an AM/PM marker and an "h", "24" with any other hour, "" with no
+// hour at all. Quoted text is literal, so "'at' HH:mm" is "24".
+function hoursInFormat(format) {
+  var text = String(format === undefined || format === null ? "" : format)
+  var quoted = false
+  var twelveHour = false
+  var anyHour = false
+  var amPm = false
+  for (var i = 0; i < text.length; i++) {
+    var c = text.charAt(i)
+    if (c === "'") {
+      if (text.charAt(i + 1) === "'") i++
+      else quoted = !quoted
+      continue
+    }
+    if (quoted) continue
+    if (c === "h") {
+      twelveHour = true
+      anyHour = true
+    } else if (c === "H") {
+      anyHour = true
+    } else if (c === "a" || c === "A") {
+      amPm = true
+    }
+  }
+  if (!anyHour) return ""
+  return amPm && twelveHour ? "12" : "24"
+}
+
+// The first entry with the clock's id anywhere in a bar layout.
+function findClock(value) {
+  if (!value || typeof value !== "object") return null
+  if (!Array.isArray(value) && value.id === "omarchy.clock") return value
+  for (var key in value) {
+    var found = findClock(value[key])
+    if (found) return found
+  }
+  return null
+}
+
+// The hours of the bar clock, from the text of shell.json files in order of
+// precedence (the user's, then Omarchy's defaults): the layout comes from the
+// first file that has one. `vertical` is the bar's own and picks the vertical
+// format. "" when no layout has a clock.
+function barClockHours(texts, vertical) {
+  var layout = null
+  for (var i = 0; i < texts.length; i++) {
+    var bar = null
+    try {
+      var parsed = JSON.parse(String(texts[i]))
+      bar = parsed && typeof parsed === "object" ? parsed.bar : null
+    } catch (e) {
+      continue
+    }
+    if (bar && typeof bar === "object" && !Array.isArray(bar) && "layout" in bar) {
+      layout = bar.layout
+      break
+    }
+  }
+  var clock = findClock(layout)
+  if (!clock) return ""
+  // Omarchy's own defaults, for an entry that names no format, are both 24 hours.
+  var format = vertical ? clock.verticalFormat : clock.format
+  if (typeof format !== "string") format = vertical ? "HH mm" : "dddd HH:mm"
+  return hoursInFormat(format)
+}
+
+// The Qt format for a clock time, or the fallback when the bar says nothing.
+function clockTimeFormat(hours, fallback) {
+  if (hours === "24") return "HH:mm"
+  if (hours === "12") return "h:mm AP"
+  return fallback
 }

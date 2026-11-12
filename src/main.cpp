@@ -11,6 +11,7 @@
 #include <QUrl>
 
 #include "backend.h"
+#include "clockformat.h"
 #include "controlcommands.h"
 #include "legacymigration.h"
 #include "notifier.h"
@@ -76,6 +77,12 @@ int main(int argc, char *argv[]) {
         }
         return runConditionCommand(paths, *config, QDateTime::currentDateTimeUtc());
     }
+    // Asked for, the usage goes to stdout and is not an error. Checked before
+    // the dash rule below, which would open the window instead.
+    if (command == "--help" || command == "-h" || command == "help") {
+        QTextStream(stdout) << usageText();
+        return 0;
+    }
     // No argument or "open" starts the window. Arguments that start with a
     // dash are Qt's own (-platform, -style) and go to the window too.
     if (!command.isEmpty() && command != "open" && !command.startsWith('-')) {
@@ -100,6 +107,8 @@ int main(int argc, char *argv[]) {
     app.installTranslator(&translator);
 
     Theme theme;
+    // Clock times show 12 or 24 hours like the clock on the Omarchy bar.
+    ClockFormat clockFormat;
     Backend backend;
     // Links the bar widget shipped in the package; enabling it waits for the user.
     PluginSetup pluginSetup;
@@ -112,6 +121,7 @@ int main(int argc, char *argv[]) {
     QObject::connect(&translator, &Translator::changed, &engine, &QQmlEngine::retranslate);
     engine.rootContext()->setContextProperty("translator", &translator);
     engine.rootContext()->setContextProperty("theme", &theme);
+    engine.rootContext()->setContextProperty("clockFormat", &clockFormat);
     engine.rootContext()->setContextProperty("backend", &backend);
     engine.rootContext()->setContextProperty("pluginSetup", &pluginSetup);
     engine.rootContext()->setContextProperty("takeoverSetup", &takeoverSetup);

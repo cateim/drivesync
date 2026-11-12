@@ -88,50 +88,30 @@ void PluginSetup::readList() {
             return;
         }
         bool enabled = false;
-        bool oldEnabled = false;
         for (const QJsonValue &value : QJsonDocument::fromJson(output).array()) {
             const QJsonObject plugin = value.toObject();
             if (!plugin.value("enabled").toBool())
                 continue;
             enabled = enabled || plugin.value("id").toString() == kPluginId;
-            oldEnabled = oldEnabled || plugin.value("id").toString() == kOldPluginId;
         }
         if (!enabled && legacyLinked()) {
             replaceLegacy();
             return;
         }
-        setState(enabled ? "enabled" : oldEnabled ? "replaceOffer" : "offer");
+        setState(enabled ? "enabled" : "offer");
     });
 }
 
 void PluginSetup::accept() {
-    if (m_state == "offer") {
-        setState("checking");
-        run(m_paths.omarchy, {"plugin", "enable", kPluginId}, [this](bool ok, const QByteArray &, const QByteArray &error) {
-            if (ok)
-                readList();
-            else
-                setState("failed", QString::fromUtf8(error).trimmed());
-        });
-    } else if (m_state == "replaceOffer") {
-        // The new widget goes right after the old one, so it keeps its place
-        // on the bar; only then is the old one switched off. Its folder stays.
-        setState("checking");
-        run(m_paths.omarchy, {"plugin", "enable", kPluginId, "--after", kOldPluginId},
-            [this](bool ok, const QByteArray &, const QByteArray &error) {
-                if (!ok) {
-                    setState("failed", QString::fromUtf8(error).trimmed());
-                    return;
-                }
-                run(m_paths.omarchy, {"plugin", "disable", kOldPluginId},
-                    [this](bool ok, const QByteArray &, const QByteArray &error) {
-                        if (ok)
-                            readList();
-                        else
-                            setState("failed", QString::fromUtf8(error).trimmed());
-                    });
-            });
-    }
+    if (m_state != "offer")
+        return;
+    setState("checking");
+    run(m_paths.omarchy, {"plugin", "enable", kPluginId}, [this](bool ok, const QByteArray &, const QByteArray &error) {
+        if (ok)
+            readList();
+        else
+            setState("failed", QString::fromUtf8(error).trimmed());
+    });
 }
 
 // The link SyncWatch made, now dangling: pacman removed /usr/share/syncwatch
@@ -171,7 +151,7 @@ void PluginSetup::replaceLegacy() {
 }
 
 void PluginSetup::decline() {
-    if (m_state != "offer" && m_state != "replaceOffer")
+    if (m_state != "offer")
         return;
     if (!m_paths.declined.isEmpty() && QDir().mkpath(QFileInfo(m_paths.declined).absolutePath())) {
         QFile mark(m_paths.declined);

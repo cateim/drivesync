@@ -71,13 +71,13 @@ ApplicationWindow {
     Shortcut {
         sequence: "B"
         context: Qt.ApplicationShortcut
-        enabled: pluginSetup.state === "offer" || pluginSetup.state === "replaceOffer"
+        enabled: pluginSetup.state === "offer"
         onActivated: pluginSetup.accept()
     }
     Shortcut {
         sequence: "N"
         context: Qt.ApplicationShortcut
-        enabled: pluginSetup.state === "offer" || pluginSetup.state === "replaceOffer"
+        enabled: pluginSetup.state === "offer"
         onActivated: pluginSetup.decline()
     }
     // While a dialog is open its own keys win: two enabled shortcuts on the

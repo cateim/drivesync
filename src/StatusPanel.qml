@@ -92,7 +92,7 @@ Rectangle {
         if (!run || !Format.valid(run.end))
             return ""
         return qsTr("Last sync at %1 (%2), took %3.")
-            .arg(Format.when(run.end, now)).arg(Format.ago(run.end, now)).arg(Format.duration(run.seconds))
+            .arg(Format.when(run.end, now, clockFormat.timeFormat)).arg(Format.ago(run.end, now)).arg(Format.duration(run.seconds))
     }
 
     function nextRunLine() {
@@ -104,14 +104,14 @@ Rectangle {
             return qsTr("Next run any moment now.")
         if (minutes < 60)
             return qsTr("Next run in %n min.", "", minutes)
-        return qsTr("Next run at %1.").arg(Format.when(next, now))
+        return qsTr("Next run at %1.").arg(Format.when(next, now, clockFormat.timeFormat))
     }
 
     function progressLine() {
         if (!hasCurrent)
             return ""
         let line = qsTr("%1. Started at %2, %3 so far.")
-            .arg(phaseText(current.phase)).arg(Format.clock(current.start)).arg(Format.duration(elapsed))
+            .arg(phaseText(current.phase)).arg(Format.clock(current.start, clockFormat.timeFormat)).arg(Format.duration(elapsed))
         if (current.listed > 0)
             line += " " + qsTr("%Ln files listed.", "", current.listed)
         return line
@@ -123,7 +123,7 @@ Rectangle {
             return qsTr("Until you resume (U).")
         if (until.getTime() <= now)
             return qsTr("Resumes on the next run.")
-        return qsTr("Until %1 (U resumes now).").arg(Format.when(until, now))
+        return qsTr("Until %1 (U resumes now).").arg(Format.when(until, now, clockFormat.timeFormat))
     }
 
     function lastRunLine() {
@@ -131,7 +131,7 @@ Rectangle {
         if (!run)
             return ""
         return qsTr("Last run at %1 (%2). Log: %3")
-            .arg(Format.when(run.start, now)).arg(Format.ago(run.start, now)).arg(Format.home(backend.logPath))
+            .arg(Format.when(run.start, now, clockFormat.timeFormat)).arg(Format.ago(run.start, now)).arg(Format.home(backend.logPath))
     }
 
     function details() {

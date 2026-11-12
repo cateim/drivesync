@@ -6,6 +6,7 @@ TEMPLATE = app
 
 HEADERS += \
     src/backend.h \
+    src/clockformat.h \
     src/conflictcache.h \
     src/controlcommands.h \
     src/legacymigration.h \
@@ -24,6 +25,7 @@ HEADERS += \
 SOURCES += \
     src/main.cpp \
     src/backend.cpp \
+    src/clockformat.cpp \
     src/conflictcache.cpp \
     src/controlcommands.cpp \
     src/legacymigration.cpp \
