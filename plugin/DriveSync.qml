@@ -28,6 +28,8 @@ Panel {
       case "outOfSync": return strings.t("cause.outOfSync")
       case "timeout": return strings.t("cause.timeout")
       case "systemd": return strings.t("cause.systemd").arg(status.causeDetail)
+      case "filtersChanged": return strings.t("cause.filtersChanged")
+      case "fixInterrupted": return strings.t("cause.fixInterrupted")
     }
     return status.causeDetail !== "" ? status.causeDetail : strings.t("cause.unknown")
   }
@@ -239,7 +241,7 @@ Panel {
           textFormat: Text.PlainText
           visible: text !== ""
           width: parent.width
-          text: sync.actionError !== "" ? sync.actionError : (root.syncState === "failing" ? root.causeText : "")
+          text: sync.actionError !== "" ? sync.actionError : (root.syncState === "failing" || root.status.status === "fixFailed" ? root.causeText : "")
           color: root.urgent
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall

@@ -16,6 +16,7 @@
 #include <functional>
 
 #include "controlcommands.h"
+#include "fixstate.h"
 #include "pausestate.h"
 #include "statuscommand.h"
 
@@ -254,6 +255,8 @@ TakeoverPlan detectTakeover(const TakeoverPaths &paths, const Snapshot &snapshot
             if (QFileInfo(dir + "/" + unitName + ".d").isDir())
                 plan.blockers << "dropIn";
 
+    if (fixPresent(paths.appState))
+        plan.blockers.prepend("fixActive");
     if (snapshot.running || snapshot.resync || Backend::resyncRunning(paths.oldStateDir, "/proc"))
         plan.blockers.prepend("running");
     else if (snapshot.lastRunOutcome != "success")
@@ -654,6 +657,12 @@ bool applyTakeover(const TakeoverPaths &paths, const TakeoverPlan &plan, const Q
 }
 
 bool undoTakeover(const TakeoverPaths &paths, QString *error) {
+    // The old units know nothing of a fix: going back halfway would leave
+    // its base run or its questions to a drive-sync that cannot finish them.
+    if (fixPresent(paths.appState)) {
+        *error = "a fix is under way; finish it or cancel it (drivesync fix --cancel) first";
+        return false;
+    }
     if (!takeLock(paths.appState, error))
         return false;
     const auto unlock = qScopeGuard([&] { releaseLock(paths.appState); });

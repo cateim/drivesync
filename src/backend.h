@@ -53,6 +53,16 @@ class Backend : public QObject {
     Q_PROPERTY(QVariantList conflicts READ conflicts NOTIFY conflictsChanged)
     Q_PROPERTY(QString conflictError READ conflictError NOTIFY conflictsChanged)
     Q_PROPERTY(QString message READ message NOTIFY messageChanged)
+    // The fix (fixstate.h), read from <appState>/fix.json: its step, what the
+    // dry run would copy, and the files it asks about.
+    Q_PROPERTY(QString fixStep READ fixStep NOTIFY fixChanged)
+    Q_PROPERTY(int fixCopies READ fixCopies NOTIFY fixChanged)
+    Q_PROPERTY(QStringList fixCopyPaths READ fixCopyPaths NOTIFY fixChanged)
+    Q_PROPERTY(QVariantList fixQuestions READ fixQuestions NOTIFY fixChanged)
+    Q_PROPERTY(QString fixError READ fixError NOTIFY fixChanged)
+    // The base run already ran: cancelling now throws it away, and the next
+    // run fails until another fix.
+    Q_PROPERTY(bool fixBaseDone READ fixBaseDone NOTIFY fixChanged)
     Q_PROPERTY(QString logPath READ logPath CONSTANT)
     Q_PROPERTY(QString drivePath READ drivePath CONSTANT)
 
@@ -78,6 +88,15 @@ public:
     QVariantList conflicts() const { return m_conflicts; }
     QString conflictError() const { return m_conflictError; }
     QString message() const { return m_message; }
+    QString fixStep() const { return m_fix.step; }
+    int fixCopies() const { return m_fix.copies; }
+    QStringList fixCopyPaths() const { return m_fixCopyPaths; }
+    QVariantList fixQuestions() const;
+    QString fixError() const { return m_fix.error; }
+    bool fixBaseDone() const {
+        return m_fix.step == "questions" || m_fix.step == "finishing"
+               || (m_fix.step == "failed" && m_fix.failedStep == "finishing");
+    }
     QString logPath() const { return m_paths.log; }
     QString drivePath() const { return m_paths.drive; }
 
@@ -94,6 +113,13 @@ public:
     Q_INVOKABLE void pauseUntilTomorrow();
     Q_INVOKABLE void pauseUntilResumed();
     Q_INVOKABLE void resume();
+    // "drivesync fix", step by step. answerFix takes {"<path>": "cloud" |
+    // "notebook"} and hands it over through <appState>/fix-answers.json.
+    Q_INVOKABLE void startFix();
+    Q_INVOKABLE void confirmFix();
+    Q_INVOKABLE void answerFix(const QVariantMap &answers);
+    Q_INVOKABLE void cancelFix();
+    Q_INVOKABLE void retryFix();
     // Reads the config again after a takeover or an undo, so the window
     // follows the log and the controls it now owns without a restart.
     Q_INVOKABLE void reloadConfig();
@@ -112,6 +138,7 @@ signals:
     void runsChanged();
     void conflictsChanged();
     void messageChanged();
+    void fixChanged();
 
 private:
     void readLog();
@@ -119,6 +146,8 @@ private:
     void scanConflicts();
     void recompute();
     void watchLog();
+    void watchAppState();
+    void updateFix(const FixState &fix);
     void setMessage(const QString &message);
     void control(const QStringList &arguments);
     void run(const QString &program, const QStringList &arguments,
@@ -126,6 +155,10 @@ private:
 
     BackendPaths m_paths;
     QFileSystemWatcher m_watcher;
+    // DriveSync's own state folder, where the fix writes its step. Watched
+    // apart from the log, so a step change does not parse the log again.
+    QFileSystemWatcher m_stateWatcher;
+    QTimer m_stateDebounce;
     QTimer m_logDebounce;
     QTimer m_poll;
     QTimer m_conflictPoll;
@@ -138,6 +171,7 @@ private:
     bool m_scanPending = false;
     QHash<QString, QString> m_service;
     QHash<QString, QString> m_timer;
+    QHash<QString, QString> m_fixUnit;
     QDateTime m_lastFinishedStart;
 
     Snapshot m_snapshot;
@@ -150,4 +184,6 @@ private:
     QDateTime m_nextRun;
     int m_typicalSeconds = 0;
     QString m_message;
+    FixState m_fix;
+    QStringList m_fixCopyPaths;
 };

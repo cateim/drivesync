@@ -5,6 +5,8 @@
 #include <QRegularExpression>
 #include <QTimeZone>
 
+#include "syncconfig.h"
+
 namespace {
 
 // A run lists every changed file, which can be thousands after a resync;
@@ -62,6 +64,22 @@ void classify(SyncRun &run) {
         if (error.contains("path1 and path2 are out of sync")) {
             run.causeKind = "outOfSync";
             run.causeDetail.clear();
+            return;
+        }
+    // DriveSync refused to start rclone over filters without a matching .md5.
+    for (const auto &error : run.errors)
+        if (error.contains(kFiltersChangedReason)) {
+            run.causeKind = "filtersChanged";
+            run.causeDetail.clear();
+            return;
+        }
+    // --max-delete stopped the run (rclone 1.75.2: "Safety abort: too many
+    // deletes (>5%, 11 of 20) on Path2 ..."). A fix would bring the deleted
+    // files back (spec 5b), so it has a kind of its own.
+    for (const auto &error : run.errors)
+        if (error.contains("Safety abort: too many deletes")) {
+            run.causeKind = "maxDelete";
+            run.causeDetail = error.left(200);
             return;
         }
     // "Bisync aborted" and "Failed to bisync" only say that it stopped; the

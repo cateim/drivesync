@@ -10,13 +10,17 @@ of `drive-sync`, the rclone bisync of `~/Drive` with Google Drive that runs
 from the `drive-sync.timer` user unit every 15 minutes, in a window, on the
 Omarchy bar (its widget ships in the package) and through
 `drivesync status --json`. It reads the rclone log, asks systemd, and looks
-for conflict copies. It never starts a resync and never touches the synced
-files; it writes its own state (`~/.local/state/drivesync/`), the link to its
-bar widget, and, when the user accepts, the bar layout through
+for conflict copies. It writes its own state (`~/.local/state/drivesync/`),
+the link to its bar widget, and, when the user accepts, the bar layout through
 `omarchy plugin`. Since step 2 it can take over a drive-sync made by
 `drive-sync.sh` (`drivesync takeover`): its packaged user units then run the
 same rclone command from `~/.config/drivesync/config.json`, and the window,
-the bar and the command line can sync now, pause and resume. The plan for growing it into the
+the bar and the command line can sync now, pause and resume. Since step 3 it
+fixes a broken base (`F`, `drivesync fix`): a resync with the folder in use,
+run by `drive-sync-fix.service`, which only starts after the user confirms a
+dry run and touches single synced files only as the fix's comparison or the
+user's answers say. It never starts a resync or touches a synced file
+otherwise. The plan for growing it into the
 owner of drive-sync is `docs/superpowers/specs/2026-11-07-drive-sync-manager-design.md`; `docs/` is git-ignored,
 so that file exists only in the maintainer's working copy. The `drive-sync` scripts themselves live
 in the DIY repository (`assets/omarchy/home/.local/bin/drive-sync.sh` and
@@ -40,7 +44,7 @@ bin/build               qmake6 + make into build/drivesync
 bin/test                builds and runs build/tests/drivesync_tests offscreen
 bin/install             bin/build, then makepkg -fsi with BUILDDIR/PKGDEST under build/
 bin/harness             builds tools/harness into build/harness and runs it with the given options
-src/main.cpp            commands run headless (status, sync, pause, resume, takeover, and run-condition, run, notify, watchdog for the units); otherwise the window
+src/main.cpp            commands run headless (status, sync, pause, resume, takeover, fix, and run-condition, run, notify, watchdog, fix-run for the units); otherwise the window
 src/synclog.{h,cpp}     pure parser of the rclone bisync log into SyncRun records
 src/snapshot.{h,cpp}    buildSnapshot(): the one place the state is decided; tone; the JSON contract
 src/backend.{h,cpp}     the window's state: log watch, systemctl calls, conflict scan, headline rules (summarize)
@@ -50,6 +54,9 @@ src/statuscommand.{h,cpp}  `drivesync status [--json]`: same sources, read once,
 src/syncconfig.{h,cpp}  the config a takeover writes; rclone arguments; filtersUsable (the md5 check)
 src/pausestate.{h,cpp}  the pause mark (~/.local/state/drivesync/paused.json) and "next 08:00"
 src/controlcommands.{h,cpp}  sync, pause, resume, run-condition, run (execs rclone); runProcess
+src/fixstate.{h,cpp}    the fix's state machine in ~/.local/state/drivesync/fix.json (steps, questions)
+src/fixcommand.{h,cpp}  `drivesync fix` and `fix-run` (drive-sync-fix.service): dry run, base run, questions, final run
+src/listingdiff.{h,cpp}  reads bisync's .lst listings (Go %q names) and compares both sides, as drive-sync.sh did
 src/legacymigration.{h,cpp}  moves SyncWatch's folders to the DriveSync names; first thing main() does
 src/notifier.{h,cpp}    notify (ExecStopPost) and watchdog: the port of drive-sync-aviso
 src/takeover.{h,cpp}    detect, apply with rollback, undo; `drivesync takeover`
@@ -66,13 +73,16 @@ src/BarBanner.qml       offer to put the widget on the bar (B), or why it could 
 src/ControlsRow.qml     sync now (S), pause (P), resume (U), open ~/Drive (O)
 src/PauseMenu.qml       the three pause lengths (1, 2, 3)
 src/TakeoverBanner.qml  offer to take over (T), or what blocks it; TakeoverDialog.qml confirms
+src/FixBanner.qml       offer to fix (F) after lost listings, out of sync or changed filters
+src/FixDialog.qml       the fix's start, the dry run to confirm (Enter) and a stopped step (retry; X cancels)
+src/FixQuestions.qml    the files that changed in the cloud during the base run: C cloud, L notebook, Enter sends
 src/format.js           relative times, durations, sizes
 src/i18n/*.json         en (plural forms only) and pt-BR
 tests/                  Qt Test suite
 tools/harness/          offscreen harness: the real Main.qml over a made-up drive-sync, saved as a PNG
 plugin/                 Omarchy bar widget (id drivesync), installed to /usr/share/drivesync/omarchy-plugin; reads `drivesync status --json`
 docs/superpowers/       git-ignored, local only: design (specs/) and step plans (plans/)
-pkgbuild/               PKGBUILD, .desktop, units/ (drive-sync and drive-sync-watchdog user units, /usr/lib/systemd/user)
+pkgbuild/               PKGBUILD, .desktop, units/ (drive-sync, drive-sync-watchdog and drive-sync-fix user units, /usr/lib/systemd/user)
 assets/icons/           launcher icon, installed by the PKGBUILD
 assets/images/          README pictures: window-*.png from bin/harness over a made-up log; bar-*.png are real screens with no file names
 ```
@@ -81,7 +91,7 @@ assets/images/          README pictures: window-*.png from bin/harness over a ma
 
 ```sh
 bin/build            # about 30 s from clean
-bin/test             # 121 cases, about 5 s (one runs real rclone on temp folders)
+bin/test             # 163 cases, about 8 s (two run real rclone on temp folders)
 bin/install          # needs sudo (pacman -U); run it in a real terminal
 bin/harness --scenario running --clock "h:mm AP" --out build/shot.png   # the window offscreen, made-up data; options atop tools/harness/harness.cpp
 makepkg -f           # from pkgbuild/, with BUILDDIR and PKGDEST set as in bin/install, to check packaging without sudo
@@ -99,7 +109,8 @@ all show what it decides. It finds the running run, the last success, the
 last run, `failingSince`, `canSyncNow` and the `tone` (`ok`, `busy`,
 `warning`, `error`), and calls `Backend::summarize`, which picks one
 headline, most urgent first:
-`unavailable` (systemctl failed), `notLoaded`, `running`, `resync`, `paused`, `noLog`,
+`unavailable` (systemctl failed), `notLoaded`, `fixing`, `fixWaiting`, `fixFailed`,
+`running`, `resync`, `paused`, `noLog`,
 `failed`, `interrupted`, `skipped` (ExecCondition: emergency home), `timerOff`,
 `stale` (no success for 45 min), `noDrive`, `noRuns` (a log with no run:
 new or rotated), `conflicts`, `ok`. What the
@@ -120,6 +131,27 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
 - A pause is a mark file, not a stopped timer: `run-condition` skips each tick
   while it holds and clears it at the first tick after its end, so "paused"
   lasts until a run really starts and survives a reboot.
+- A fix is a mark file too: `fix.json` is written before anything else and
+  `run-condition` skips every tick while it exists, so the timer, `S`, `U` and
+  the bar's sync wait for the whole fix (spec section 5). Its steps:
+  `preparing` (wait for a run, dry run into `fix-dry-run.log`), `confirm`
+  (the user), `base` (the resync, into the main log), `questions` (the
+  user), `finishing` (answers, then a normal run through `runCommandPlan`),
+  or `failed`. `fix-run` loops until a step waits for the user, fails or ends,
+  and sends a card at once when it does (the watchdog repeats it hourly). It
+  checks the config's `runOnlyWhen` before every step, `fix --start` also
+  refuses after a run that `--max-delete` stopped (`causeKind` `maxDelete`,
+  spec 5b), and a final run that failed and took the listings with it sends
+  the retry back to `base`.
+- A fix shows as `fixing` (busy; the JSON's `resync` is true), `fixWaiting`
+  (confirm or questions) or `fixFailed`. A working step with
+  `drive-sync-fix.service` inactive is interrupted (`causeKind`
+  `fixInterrupted`), but only 60 s after `stepStarted`: `fix` writes the step
+  before systemd starts the unit. The `systemctl show` call describes three
+  units (service, timer, fix unit), and every reader requires all three.
+- Runs refused for the filters' md5 have `causeKind` `filtersChanged` (the
+  refusal text ends in `kFiltersChangedReason`): a normal card says "press F"
+  instead of the critical "stopped syncing" one.
 
 ## Conventions
 
@@ -160,7 +192,15 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
   renames the listings to `-err`, and from then on even the right filters fail
   until a resync. So `drivesync run` checks `filtersUsable` before it execs
   rclone, the takeover copies the filters with their `.md5`, and no byte of the
-  filters (comments included) may change outside a flow that resyncs.
+  filters (comments included) may change outside a flow that resyncs. The fix
+  is that flow: edit `filters.txt`, then `F`; runs are refused until it ends.
+- **A bisync lock written without `--max-lock` never expires.** Tried with
+  rclone 1.75.2 on 2026-11-11: a base run killed with SIGKILL and no
+  `--max-lock` leaves `Expires at 0001-01-01`, so every later run fails with
+  "prior lock file found". The fix's dry run and base run pass
+  `--max-lock 2m` (the final run keeps the config's own), and a lock
+  line in what a run just wrote (never an older line of the log) is waited
+  out once, 130 s.
 - **A user unit beats a packaged one of the same name.** The package ships
   `drive-sync.service` and `.timer`; they stay inert while the old ones exist in
   `~/.config/systemd/user`, which is why the takeover moves those aside and then

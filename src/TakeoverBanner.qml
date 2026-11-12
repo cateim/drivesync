@@ -30,6 +30,7 @@ Rectangle {
         const name = code.indexOf(":") > 0 ? code.slice(code.indexOf(":") + 1) : ""
         if (code === "running") return qsTr("a run is going, and the offer comes back when it ends")
         if (code === "lastRunNotSuccess") return qsTr("the last run did not succeed")
+        if (code === "fixActive") return qsTr("a fix is under way")
         if (code === "noListings") return qsTr("bisync has no listings to keep")
         if (code === "filtersChanged") return qsTr("the filters changed since the last resync")
         if (code === "remoteMissing") return qsTr("rclone does not know the remote")

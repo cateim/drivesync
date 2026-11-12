@@ -11,8 +11,12 @@
 //   --pause none|hour|forever|ended      a pause mark; --managed: DriveSync's own units
 //   --takeover none|offer|running|blocked|failed
 //   --bar none|offer|blocked             what the fake omarchy says about the widget
+//   --fix none|fixing|confirm|questions|failed   a fix at that step (implies --managed);
+//                                        confirm comes with a dry run of 1200 copies
+//   --fix-later                          writes that fix after the window is up, so it opens by itself
 //   --keys <letters>                     t Tab, 1 and 2 the tabs, h ?, d Down, e Esc,
-//                                        s Space, p P, o T
+//                                        s Space, p P, o T, f F, c C, l L, x X, r Enter,
+//                                        w waits a second
 //   --width N --height N                 1000x700 by default
 //   --real                               this machine's drive-sync: never for the README
 
@@ -32,6 +36,7 @@
 
 #include "backend.h"
 #include "clockformat.h"
+#include "fixstate.h"
 #include "pausestate.h"
 #include "pluginsetup.h"
 #include "takeoversetup.h"
@@ -110,11 +115,14 @@ int main(int argc, char **argv) {
         QDir().mkpath(dir.filePath("Drive"));
     }
 
+    const QString fix = opt("--fix", "none");
     const QString systemctl = dir.filePath("systemctl");
     put(systemctl, QString("#!/bin/sh\ncase \"$*\" in\n  *list-timers*) echo '[{\"next\":%1}]' ;;\n"
                            "  *) printf 'LoadState=loaded\\nActiveState=%2\\nUnitFileState=static\\nResult=success\\nExecMainStartTimestamp=@%3\\n\\n"
-                           "LoadState=loaded\\nActiveState=active\\nUnitFileState=enabled\\nResult=success\\n' ;;\nesac\n")
-                       .arg(now.addSecs(380).toMSecsSinceEpoch() * 1000).arg(active).arg(now.addSecs(-1400).toSecsSinceEpoch()).toUtf8());
+                           "LoadState=loaded\\nActiveState=active\\nUnitFileState=enabled\\nResult=success\\n\\n"
+                           "LoadState=loaded\\nActiveState=%4\\nUnitFileState=static\\nResult=success\\n' ;;\nesac\n")
+                       .arg(now.addSecs(380).toMSecsSinceEpoch() * 1000).arg(active).arg(now.addSecs(-1400).toSecsSinceEpoch())
+                       .arg(fix == "fixing" ? "activating" : "inactive").toUtf8());
     QFile::setPermissions(systemctl, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
 
     QQuickStyle::setStyle("Material");
@@ -125,7 +133,37 @@ int main(int argc, char **argv) {
     BackendPaths fake{dir.filePath("drive-sync.log"), dir.filePath("Drive"), dir.filePath("state"),
                       dir.filePath("proc"), systemctl, QStandardPaths::findExecutable("find"), dir.filePath("app"),
                       QString(), QString()};
-    fake.managed = args.contains("--managed");
+    fake.managed = args.contains("--managed") || fix != "none";
+    const bool fixLater = args.contains("--fix-later");
+    auto writeTheFix = [&] {
+        FixState state;
+        state.step = fix == "fixing" ? "base" : fix;
+        state.started = QDateTime::currentDateTimeUtc().addSecs(-1500);
+        state.stepStarted = QDateTime::currentDateTimeUtc().addSecs(-300);
+        if (fix == "confirm") {
+            // A big dry run: the dialog lists the first 500 and counts the rest.
+            QByteArray dryRun;
+            for (int i = 0; i < 1200; ++i)
+                dryRun += QString("2026/11/11 12:00:01 NOTICE: Photos/2025/trip-%1.jpg: Skipped copy as --dry-run is set "
+                                  "(size 2400000)\n").arg(i, 4, 10, QChar('0')).toUtf8();
+            put(fixDryRunLogPath(fake.appState), dryRun);
+            state.copies = 1200;
+        }
+        if (fix == "questions") {
+            const qint64 t = QDateTime::currentSecsSinceEpoch();
+            FixQuestion edited{"Notes/ideas.md", "differs", 2600, 2400, t - 1300, t - 5400, ""};
+            FixQuestion added{"Documents/budget-2026.ods", "onlyCloud", 18300, -1, t - 900, 0, ""};
+            FixQuestion sheet{"Spreadsheets/bills.xlsx", "differs", 19100, 18300, t - 1100, t - 86400, ""};
+            state.questions = {added, edited, sheet};
+        }
+        if (fix == "failed") {
+            state.failedStep = "base";
+            state.error = "Bisync critical error: prior lock file found: ~/.local/state/rclone/bisync/gdrive_..lck";
+        }
+        writeFix(fake.appState, state);
+    };
+    if (fix != "none" && !fixLater)
+        writeTheFix();
     const QString pause = opt("--pause", "none");
     if (pause != "none") {
         PauseMark mark;
@@ -190,6 +228,10 @@ int main(int argc, char **argv) {
     auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
     window->resize(width, height);
     QTest::qWait(1500);
+    if (fix != "none" && fixLater) {
+        writeTheFix();
+        QTest::qWait(400);
+    }
 
     for (const QChar k : keys) {
         if (k == 't') QTest::keyClick(window, Qt::Key_Tab);
@@ -199,6 +241,12 @@ int main(int argc, char **argv) {
         else if (k == 's') QTest::keyClick(window, Qt::Key_Space);
         else if (k == 'p') QTest::keyClick(window, Qt::Key_P);
         else if (k == 'o') QTest::keyClick(window, Qt::Key_T);
+        else if (k == 'f') QTest::keyClick(window, Qt::Key_F);
+        else if (k == 'c') QTest::keyClick(window, Qt::Key_C);
+        else if (k == 'l') QTest::keyClick(window, Qt::Key_L);
+        else if (k == 'x') QTest::keyClick(window, Qt::Key_X);
+        else if (k == 'r') QTest::keyClick(window, Qt::Key_Return);
+        else if (k == 'w') QTest::qWait(1100);
         else if (k == '1') QTest::keyClick(window, Qt::Key_1);
         else if (k == '2') QTest::keyClick(window, Qt::Key_2);
         QTest::qWait(250);

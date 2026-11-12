@@ -12,8 +12,8 @@ and a bar widget, driven from the keyboard.
 
 - **Status**: in sync, syncing now (with the phase and a progress bar against
   the usual run time), resync in progress, failed (with the same cause the
-  desktop notification names and how to recover), cut off, timer off, or no
-  sync for a while.
+  desktop notification names and how to recover), cut off, timer off, no
+  sync for a while, or a fix at work or waiting for you.
 - **Runs**: the last 40 runs from the log, each with what changed in the
   cloud and on the notebook, file by file, and its errors.
 - **Conflict copies**: the `*.conflictN` files bisync left in `~/Drive` when a
@@ -29,11 +29,15 @@ and a bar widget, driven from the keyboard.
   that is off; a daily reminder of a pause with no end.
 - **Takeover**: runs an existing drive-sync from DriveSync's own units with
   the same rclone command, so no resync is needed, and can go back.
+- **Fix**: rebuilds the base of both sides after lost listings, listings out
+  of sync or edited filters, with `~/Drive` still in use, asking you about
+  every file that changed in the cloud meanwhile.
 
-It never starts a resync and never touches your synced files. It writes its
-own state in `~/.local/state/drivesync/`, the link to its bar widget and,
-when you accept, the bar layout through `omarchy plugin`. After a takeover it
-also owns `~/.config/drivesync/` and the `drive-sync` user timers.
+It starts a resync only as a fix you confirmed, and touches no synced file
+otherwise. It writes its own state in `~/.local/state/drivesync/`, the link
+to its bar widget and, when you accept, the bar layout through
+`omarchy plugin`. After a takeover it also owns `~/.config/drivesync/` and
+the `drive-sync` user timers.
 
 ## Screens
 
@@ -49,21 +53,23 @@ also owns `~/.config/drivesync/` and the `drive-sync` user timers.
 
 ## Shortcuts
 
-| Key              | Action                                            |
-| ---------------- | ------------------------------------------------- |
-| `Space`          | Read the log and ask systemd again                |
-| `Tab`, `1`, `2`  | Switch between runs and conflict copies           |
-| `↑` `↓`, `J` `K` | Move through the list                             |
-| `Enter`          | Show the picked conflict copy in the file manager |
-| `S`              | Sync now                                          |
-| `O`              | Open the Drive folder                             |
-| `P`              | Pause for 1 hour, until 8:00 or until resumed     |
-| `U`              | Resume, and start a run                           |
-| `T`              | Let DriveSync run drive-sync, when offered        |
-| `B`              | Put DriveSync on the Omarchy bar, when offered    |
-| `N`              | Say no to that offer, or hide its notice for good |
-| `?`              | Show or hide the shortcuts                        |
-| `Q`              | Quit                                              |
+| Key              | Action                                                          |
+| ---------------- | --------------------------------------------------------------- |
+| `Space`          | Read the log and ask systemd again                              |
+| `Tab`, `1`, `2`  | Switch between runs and conflict copies                         |
+| `↑` `↓`, `J` `K` | Move through the list                                           |
+| `Enter`          | Show the picked conflict copy in the file manager               |
+| `S`              | Sync now                                                        |
+| `O`              | Open the Drive folder                                           |
+| `P`              | Pause for 1 hour, until 8:00 or until resumed                   |
+| `U`              | Resume, and start a run                                         |
+| `T`              | Let DriveSync run drive-sync, when offered                      |
+| `F`, `X`         | Fix a broken sync, or cancel the fix in its dialog              |
+| `C`, `L`         | Keep the cloud's or the notebook's file, in the fix's questions |
+| `B`              | Put DriveSync on the Omarchy bar, when offered                  |
+| `N`              | Say no to that offer, or hide its notice for good               |
+| `?`              | Show or hide the shortcuts                                      |
+| `Q`              | Quit                                                            |
 
 <p align="center">
   <img src="assets/images/window-shortcuts.png" width="560" alt="The shortcuts overlay, opened with the question mark key">
@@ -79,6 +85,7 @@ also owns `~/.config/drivesync/` and the `drive-sync` user timers.
 | `~/.local/state/drive-sync/pausado`                         | A resync from `drive-sync.sh` that paused the timer          |
 | `~/.config/drivesync/config.json`                           | The rclone command, once DriveSync runs drive-sync           |
 | `~/.local/state/drivesync/paused.json`                      | A pause, and when it ends                                    |
+| `~/.local/state/drivesync/fix.json`                         | A fix: its step, the dry run's count and its questions       |
 | `find ~/Drive -name '*.conflict[0-9]*'`                     | Conflict copies (`.git`, `node_modules` and `.venv` skipped) |
 
 The log is watched, systemd is polled every 30 seconds (5 while a run is
@@ -128,12 +135,43 @@ itself, and `T` cancels the wait.
   Nothing is deleted. If any step fails, every step done so far is undone,
   except when an old file cannot move back: then every drive-sync timer is
   left off, the error names the file, and the manifest says where each one is.
-- `drivesync takeover --undo` goes back. Until DriveSync can resync by itself,
-  lost listings are fixed the old way: undo, then `drive-sync.sh resync`.
+- `drivesync takeover --undo` goes back, unless a fix is under way.
 
 `drivesync run` refuses to start rclone when the filters' `.md5` is missing or
 stale: a single bisync run in that state throws away its base, and only a
-resync brings it back.
+resync brings it back. So filters change in two steps: edit
+`~/.config/drivesync/filters.txt`, then press `F`.
+
+## Fixing a broken sync
+
+When bisync loses its listings, finds them out of sync, or the filters
+changed, every run fails until the base of both sides is rebuilt. Once
+DriveSync runs drive-sync, the window offers the fix (`F`, or any time from
+`F`), and it runs in its own unit, `drive-sync-fix.service`, so closing the
+window or logging out does not stop it halfway:
+
+1. Every run waits from the first step to the last: timer ticks, `S`, `U`
+   and the bar's sync are skipped while `fix.json` exists.
+2. A dry run lists what the base run would copy, and nothing changes until
+   you confirm it (`Enter`; `X` cancels the fix).
+3. The base run, a resync where the newer file wins, takes about 40 minutes
+   with `~/Drive` still in use.
+4. The two new listings are compared. A file that changed on the notebook
+   during the base run is kept without asking. A file that changed in the
+   cloud, or appeared only there, is asked about: `C` keeps the cloud's
+   version, `L` the notebook's (a file only in the cloud goes to the Drive
+   trash).
+5. A normal run checks that both sides match, and the timer runs again.
+
+A fix waiting for you, or one that stopped, sends a card at once and every
+hour after. A step that stopped (a logout without lingering, a shutdown) is
+retried with `F`; a lock the stopped run left expires after 2 minutes, and the
+retry waits it out. Once the base ran, `X` asks twice: cancelling throws that
+run away, and every run fails until another fix.
+
+No fix is offered where the config's `runOnlyWhen` says no (another home
+mounted), nor after `--max-delete` stopped a run: a resync would bring the
+deleted files back.
 
 ## Command line
 
@@ -145,11 +183,13 @@ drivesync sync             # one run now
 drivesync pause [--minutes N | --until-tomorrow]   # no flag: until resumed
 drivesync resume           # end the pause and start a run
 drivesync takeover --check | --apply | --undo
+drivesync fix --start | --confirm | --answers <file.json> | --cancel | --retry
 ```
 
-`sync`, `pause`, `resume` and `takeover` take `--json` and answer
-`{"ok": ..., "error": ...}`. The units call `run-condition`, `run`, `notify`
-and `watchdog`.
+`sync`, `pause`, `resume`, `takeover` and `fix` take `--json` and answer
+`{"ok": ..., "error": ...}`. `fix --answers` reads `{"<path>": "cloud" |
+"notebook"}` with an answer for every file the fix asked about. The units
+call `run-condition`, `run`, `notify`, `watchdog` and `fix-run`.
 
 The JSON is version 2 of a fixed contract: `version`, `now`, `status`,
 `tone` (`ok`, `busy`, `warning`, `error`), `causeKind`, `causeDetail`,

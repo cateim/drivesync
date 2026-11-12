@@ -11,6 +11,9 @@
         <file alias="PauseMenu.qml">PauseMenu.qml</file>
         <file alias="TakeoverBanner.qml">TakeoverBanner.qml</file>
         <file alias="TakeoverDialog.qml">TakeoverDialog.qml</file>
+        <file alias="FixBanner.qml">FixBanner.qml</file>
+        <file alias="FixDialog.qml">FixDialog.qml</file>
+        <file alias="FixQuestions.qml">FixQuestions.qml</file>
         <file alias="format.js">format.js</file>
         <file alias="i18n/en.json">i18n/en.json</file>
         <file alias="i18n/pt-BR.json">i18n/pt-BR.json</file>

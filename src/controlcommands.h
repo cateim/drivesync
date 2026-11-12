@@ -12,6 +12,10 @@
 // failed, with the reason on err. With "--json" the answer goes to out as
 // {"ok": bool, "error": text} instead.
 
+// Answers the caller of a command once: {"ok", "error"} on out with json,
+// else the error on err. Returns the exit code.
+int commandAnswer(bool json, const QString &error, QTextStream &out, QTextStream &err);
+
 // Runs a program and waits up to timeoutMs, killing it after that. output
 // gets stdout when given; error gets stderr, or why it did not run.
 bool runProcess(const QString &program, const QStringList &arguments, int timeoutMs, QByteArray *output,
@@ -36,7 +40,7 @@ int runPauseCommand(const QStringList &arguments, const BackendPaths &paths, con
 int runResumeCommand(const QStringList &arguments, const BackendPaths &paths, QTextStream &out, QTextStream &err);
 
 // "drivesync run-condition", the ExecCondition of drive-sync.service: 0 runs,
-// 1 skips, 255 fails (runOnlyWhen crashed or exited 255, as systemd reads it). runOnlyWhen goes first, so a tick that could not run anyway does
+// 1 skips (always while a fix is under way), 255 fails (runOnlyWhen crashed or exited 255, as systemd reads it). runOnlyWhen goes first, so a tick that could not run anyway does
 // not use up the end of a pause; then a pause that ended is cleared and runs.
 int runConditionCommand(const BackendPaths &paths, const SyncConfig &config, const QDateTime &now);
 

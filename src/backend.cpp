@@ -1,6 +1,7 @@
 #include "backend.h"
 
 #include "conflictcache.h"
+#include "fixcommand.h"
 #include "syncconfig.h"
 
 #include <QCoreApplication>
@@ -16,6 +17,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
+#include <QSaveFile>
 #include <QStandardPaths>
 #include <QTimeZone>
 #include <QUrl>
@@ -62,6 +64,16 @@ Backend::Backend(const BackendPaths &paths, QObject *parent) : QObject(parent), 
     connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this] { m_logDebounce.start(); });
     connect(&m_logDebounce, &QTimer::timeout, this, &Backend::readLog);
 
+    // A step of the fix moves on: show it now, and ask systemd whether its
+    // unit took the step, so a confirm never reads as a dead fix.
+    m_stateDebounce.setSingleShot(true);
+    m_stateDebounce.setInterval(100);
+    connect(&m_stateWatcher, &QFileSystemWatcher::directoryChanged, this, [this] { m_stateDebounce.start(); });
+    connect(&m_stateDebounce, &QTimer::timeout, this, [this] {
+        querySystemd();
+        recompute();
+    });
+
     // systemd has no change signal worth a D-Bus subscription here; polling
     // also moves the relative times and the stale check along.
     m_poll.setInterval(30 * 1000);
@@ -95,6 +107,7 @@ Backend::~Backend() {
 }
 
 void Backend::refresh() {
+    watchAppState();
     readLog();
     querySystemd();
     scanConflicts();
@@ -114,6 +127,13 @@ void Backend::watchLog() {
     const QString folder = QFileInfo(m_paths.log).absolutePath();
     if (QFileInfo::exists(folder))
         m_watcher.addPath(folder);
+}
+
+void Backend::watchAppState() {
+    // The folder appears with the first thing DriveSync writes there.
+    if (!m_paths.appState.isEmpty() && QFileInfo(m_paths.appState).isDir()
+        && !m_stateWatcher.directories().contains(m_paths.appState))
+        m_stateWatcher.addPath(m_paths.appState);
 }
 
 void Backend::readLog() {
@@ -171,9 +191,10 @@ void Backend::querySystemd() {
     run(m_paths.systemctl, systemdShowArguments(),
         [this](bool ok, const QByteArray &output) {
             const auto units = parseShow(output);
-            m_systemctlWorks = ok && units.size() == 2;
+            m_systemctlWorks = ok && units.size() == 3;
             m_service = m_systemctlWorks ? units.at(0) : QHash<QString, QString>();
             m_timer = m_systemctlWorks ? units.at(1) : QHash<QString, QString>();
+            m_fixUnit = m_systemctlWorks ? units.at(2) : QHash<QString, QString>();
             run(m_paths.systemctl, listTimersArguments(),
                 [this](bool ok, const QByteArray &output) {
                     m_systemdPending = false;
@@ -261,6 +282,9 @@ QVariantMap Backend::runToMap(const SyncRun &run, const QString &outcome) {
 }
 
 void Backend::recompute() {
+    // The state folder may appear after the window opened (the first
+    // conflict cache on a new machine): watch it from then on.
+    watchAppState();
     SnapshotSources src;
     src.runs = m_parsed;
     src.logFound = m_logFound;
@@ -271,8 +295,14 @@ void Backend::recompute() {
     src.driveFound = m_conflictError != "noDrive";
     src.conflicts = int(m_conflicts.size());
     src.managed = m_paths.managed;
-    if (!m_paths.appState.isEmpty())
+    if (!m_paths.appState.isEmpty()) {
         src.pause = readPause(pauseFilePath(m_paths.appState));
+        src.fixPresent = fixPresent(m_paths.appState);
+        if (src.fixPresent)
+            src.fix = readFix(m_paths.appState);
+    }
+    src.fixUnitActive = fixUnitBusy(m_fixUnit);
+    updateFix(src.fix);
     // UTC: comparing local times makes Qt look the zone up every time (see
     // toTime in synclog.cpp), and the parsed times carry a fixed offset.
     src.now = QDateTime::currentDateTimeUtc();
@@ -295,7 +325,7 @@ void Backend::recompute() {
 }
 
 // The headline, most urgent first. Statuses: "unavailable", "notLoaded",
-// "running", "resync", "paused", "noLog", "failed", "interrupted", "skipped",
+// "fixing", "fixWaiting", "fixFailed", "running", "resync", "paused", "noLog", "failed", "interrupted", "skipped",
 // "timerOff", "stale", "noDrive", "noRuns", "conflicts", "ok". Warnings carry what the
 // headline leaves out: "timerOff", "timerDisabled", "conflicts".
 SyncSummary Backend::summarize(const SyncInputs &in) {
@@ -314,6 +344,15 @@ SyncSummary Backend::summarize(const SyncInputs &in) {
     } else if (in.serviceLoad != "loaded") {
         s.status = "notLoaded";
         s.causeDetail = in.serviceLoad;
+    } else if (!in.fixStep.isEmpty()) {
+        // A fix holds every run, and its base run writes to the log like one.
+        if (in.fixStep == "failed" || in.fixInterrupted) {
+            s.status = "fixFailed";
+            s.causeKind = in.fixInterrupted ? "fixInterrupted" : "fix";
+            s.causeDetail = in.fixInterrupted ? QString("the fix stopped halfway") : in.fixError;
+        } else {
+            s.status = fixWaiting(in.fixStep) ? "fixWaiting" : "fixing";
+        }
     } else if (in.running) {
         s.status = in.resyncRunning ? "resync" : "running";
     } else if (in.resyncRunning) {
@@ -427,6 +466,71 @@ void Backend::reloadConfig() {
         readLog();
     }
     refresh();
+}
+
+namespace {
+
+// The paths the confirm dialog lists; the count says how many there are in all.
+constexpr int kShownCopies = 500;
+
+bool sameFix(const FixState &a, const FixState &b) {
+    if (a.step != b.step || a.stepStarted != b.stepStarted || a.error != b.error || a.copies != b.copies
+        || a.questions.size() != b.questions.size())
+        return false;
+    for (qsizetype i = 0; i < a.questions.size(); ++i)
+        if (a.questions.at(i).path != b.questions.at(i).path || a.questions.at(i).answer != b.questions.at(i).answer)
+            return false;
+    return true;
+}
+
+QDateTime fromUnixSeconds(qint64 seconds) {
+    return seconds > 0 ? QDateTime::fromSecsSinceEpoch(seconds, QTimeZone::UTC) : QDateTime();
+}
+
+}  // namespace
+
+void Backend::updateFix(const FixState &fix) {
+    if (sameFix(fix, m_fix))
+        return;
+    // The dry-run log can hold thousands of copies: read once per confirm.
+    if (fix.step != "confirm") {
+        m_fixCopyPaths.clear();
+    } else if (m_fix.step != "confirm" || m_fix.stepStarted != fix.stepStarted || m_fixCopyPaths.isEmpty()) {
+        QFile log(fixDryRunLogPath(m_paths.appState));
+        int total = 0;
+        m_fixCopyPaths = log.open(QIODevice::ReadOnly) ? dryRunCopies(log.readAll(), kShownCopies, &total) : QStringList();
+    }
+    m_fix = fix;
+    emit fixChanged();
+}
+
+QVariantList Backend::fixQuestions() const {
+    QVariantList list;
+    for (const FixQuestion &q : m_fix.questions)
+        list.append(QVariantMap{{"path", q.path},
+                                {"kind", q.kind},
+                                {"cloudSize", q.cloudSize},
+                                {"notebookSize", q.notebookSize},
+                                {"cloudTime", fromUnixSeconds(q.cloudTime)},
+                                {"notebookTime", fromUnixSeconds(q.notebookTime)},
+                                {"answer", q.answer}});
+    return list;
+}
+
+void Backend::startFix() { control({"fix", "--start"}); }
+void Backend::confirmFix() { control({"fix", "--confirm"}); }
+void Backend::cancelFix() { control({"fix", "--cancel"}); }
+void Backend::retryFix() { control({"fix", "--retry"}); }
+
+void Backend::answerFix(const QVariantMap &answers) {
+    const QString file = m_paths.appState + "/fix-answers.json";
+    QSaveFile out(file);
+    if (!QDir().mkpath(m_paths.appState) || !out.open(QIODevice::WriteOnly)
+        || out.write(QJsonDocument(QJsonObject::fromVariantMap(answers)).toJson()) < 0 || !out.commit()) {
+        setMessage(tr("Cannot write %1.").arg(file));
+        return;
+    }
+    control({"fix", "--answers", file});
 }
 
 void Backend::syncNow() { control({"sync"}); }

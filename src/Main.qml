@@ -31,6 +31,27 @@ ApplicationWindow {
     Connections {
         target: backend
         function onChanged() { win.now = Date.now() }
+        // A fix that reaches a question opens its dialog, unless another
+        // dialog is in the way; one already waiting at start is only shown.
+        function onFixChanged() {
+            const step = backend.fixStep
+            if (step !== win.lastFixStep && !win.dialogOpen) {
+                if (step === "confirm")
+                    fixDialog.openGuarded()
+                else if (step === "questions")
+                    fixQuestions.openGuarded()
+            }
+            win.lastFixStep = step
+        }
+    }
+    property string lastFixStep: ""
+    Component.onCompleted: win.lastFixStep = backend.fixStep
+
+    function openFix() {
+        if (backend.fixStep === "questions")
+            fixQuestions.open()
+        else
+            fixDialog.open()
     }
     Connections {
         target: takeoverSetup
@@ -52,7 +73,11 @@ ApplicationWindow {
         && takeoverSetup.blockers.length === 1 && takeoverSetup.blockers[0] === "running"
 
     function move(step) {
-        if (win.page === 0)
+        if (fixQuestions.visible)
+            fixQuestions.move(step)
+        else if (fixDialog.visible)
+            fixDialog.scroll(step)
+        else if (win.page === 0)
             runsPage.move(step)
         else
             conflictsPage.move(step)
@@ -66,6 +91,8 @@ ApplicationWindow {
     // closePolicy never sees Esc: the window closes them.
     Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: pauseMenu.visible; onActivated: pauseMenu.close() }
     Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: takeoverDialog.visible; onActivated: takeoverDialog.close() }
+    Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: fixDialog.visible; onActivated: fixDialog.close() }
+    Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: fixQuestions.visible; onActivated: fixQuestions.close() }
     Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; onActivated: Qt.quit() }
     Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; onActivated: backend.refresh() }
     Shortcut { sequence: "O"; context: Qt.ApplicationShortcut; enabled: !win.dialogOpen; onActivated: backend.openDriveFolder() }
@@ -83,7 +110,8 @@ ApplicationWindow {
     }
     // While a dialog is open its own keys win: two enabled shortcuts on the
     // same key cancel each other out.
-    readonly property bool dialogOpen: pauseMenu.visible || takeoverDialog.visible
+    readonly property bool dialogOpen: pauseMenu.visible || takeoverDialog.visible || fixDialog.visible
+                                       || fixQuestions.visible
     Shortcut { sequences: ["Tab", "Backtab"]; context: Qt.ApplicationShortcut; enabled: !win.dialogOpen; onActivated: win.page = 1 - win.page }
     Shortcut { sequence: "1"; context: Qt.ApplicationShortcut; enabled: !win.dialogOpen; onActivated: win.page = 0 }
     Shortcut { sequence: "2"; context: Qt.ApplicationShortcut; enabled: !win.dialogOpen; onActivated: win.page = 1 }
@@ -121,6 +149,25 @@ ApplicationWindow {
                 win.takeoverArmed = !win.takeoverArmed
         }
     }
+    // F offers the fix, or opens the step that waits for the user. While its
+    // unit works there is nothing to decide.
+    Shortcut {
+        sequence: "F"
+        context: Qt.ApplicationShortcut
+        // After --max-delete stopped a run, a fix would bring the deleted
+        // files back (spec 5b): no F until a run passes.
+        enabled: !win.dialogOpen && backend.managed && backend.status !== "fixing"
+                 && !(backend.status === "failed" && backend.causeKind === "maxDelete")
+        onActivated: win.openFix()
+    }
+    Shortcut {
+        sequence: "X"
+        context: Qt.ApplicationShortcut
+        enabled: (fixDialog.visible && fixDialog.hasFix) || fixQuestions.visible
+        onActivated: fixQuestions.visible ? fixQuestions.cancelFix() : fixDialog.cancelFix()
+    }
+    Shortcut { sequence: "C"; context: Qt.ApplicationShortcut; enabled: fixQuestions.visible; onActivated: fixQuestions.choose("cloud") }
+    Shortcut { sequence: "L"; context: Qt.ApplicationShortcut; enabled: fixQuestions.visible; onActivated: fixQuestions.choose("notebook") }
     Shortcut { sequences: ["Down", "J"]; context: Qt.ApplicationShortcut; onActivated: win.move(1) }
     Shortcut { sequences: ["Up", "K"]; context: Qt.ApplicationShortcut; onActivated: win.move(-1) }
     Shortcut {
@@ -134,6 +181,18 @@ ApplicationWindow {
         context: Qt.ApplicationShortcut
         enabled: takeoverDialog.visible
         onActivated: takeoverDialog.confirm()
+    }
+    Shortcut {
+        sequences: ["Return", "Enter"]
+        context: Qt.ApplicationShortcut
+        enabled: fixDialog.visible
+        onActivated: fixDialog.accept()
+    }
+    Shortcut {
+        sequences: ["Return", "Enter"]
+        context: Qt.ApplicationShortcut
+        enabled: fixQuestions.visible
+        onActivated: fixQuestions.send()
     }
 
     // Right-to-left languages mirror the window; the Translator sets the
@@ -157,6 +216,11 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.topMargin: -6
                 onPauseRequested: pauseMenu.open()
+            }
+
+            FixBanner {
+                Layout.fillWidth: true
+                onFixRequested: win.openFix()
             }
 
             TakeoverBanner {
@@ -229,5 +293,7 @@ ApplicationWindow {
 
         PauseMenu { id: pauseMenu }
         TakeoverDialog { id: takeoverDialog }
+        FixDialog { id: fixDialog }
+        FixQuestions { id: fixQuestions; now: win.now }
     }
 }

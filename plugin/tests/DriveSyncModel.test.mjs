@@ -12,7 +12,8 @@ const model = {}
 vm.runInNewContext(source.replace(/^\.pragma library\s*$/m, ""), model)
 
 const STATUSES = ["ok", "running", "resync", "paused", "failed", "interrupted", "skipped", "timerOff",
-                  "stale", "noDrive", "noRuns", "noLog", "notLoaded", "unavailable", "conflicts"]
+                  "stale", "noDrive", "noRuns", "noLog", "notLoaded", "unavailable", "conflicts",
+                  "fixing", "fixWaiting", "fixFailed"]
 
 // What `drivesync status --json` prints with drive-sync in sync (contract version 2).
 const HEALTHY = {
@@ -83,12 +84,14 @@ test("barState maps every status", () => {
   const expected = {
     ok: "ok", running: "syncing", resync: "resync", paused: "paused", failed: "failing",
     interrupted: "warning", skipped: "warning", stale: "warning", noRuns: "warning", conflicts: "warning",
-    timerOff: "timerOff", noDrive: "broken", noLog: "broken", notLoaded: "broken", unavailable: "broken"
+    timerOff: "timerOff", noDrive: "broken", noLog: "broken", notLoaded: "broken", unavailable: "broken",
+    fixing: "resync", fixWaiting: "warning", fixFailed: "broken"
   }
   const tones = {
     ok: "ok", running: "busy", resync: "busy", paused: "warning", failed: "error", interrupted: "warning",
     skipped: "warning", stale: "warning", noRuns: "warning", conflicts: "warning", timerOff: "error",
-    noDrive: "error", noLog: "error", notLoaded: "error", unavailable: "error"
+    noDrive: "error", noLog: "error", notLoaded: "error", unavailable: "error",
+    fixing: "busy", fixWaiting: "warning", fixFailed: "error"
   }
   for (const status of STATUSES) {
     assert.equal(model.barState(snapshot({ status, tone: tones[status] })), expected[status], status)
@@ -278,8 +281,10 @@ test("warnings get the window's orange on the bar and in the panel", () => {
 
 test("the failing line has a sentence for every cause the app names", () => {
   const qml = readFileSync(new URL("../DriveSync.qml", import.meta.url), "utf8")
-  for (const kind of ["lostListings", "outOfSync", "timeout", "systemd"])
+  for (const kind of ["lostListings", "outOfSync", "timeout", "systemd", "filtersChanged", "fixInterrupted"])
     assert.match(qml, new RegExp(`case "${kind}": return strings\\.t\\("cause\\.${kind}"\\)`), kind)
+  // A fix that stopped says why too, not only a failed run.
+  assert.match(qml, /root\.syncState === "failing" \|\| root\.status\.status === "fixFailed"/)
   // An "error" with no line, or a kind this widget does not know, still says something.
   assert.match(qml, /status\.causeDetail !== "" \? status\.causeDetail : strings\.t\("cause\.unknown"\)/)
 })

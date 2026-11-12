@@ -13,6 +13,7 @@
 #include "backend.h"
 #include "clockformat.h"
 #include "controlcommands.h"
+#include "fixcommand.h"
 #include "legacymigration.h"
 #include "notifier.h"
 #include "pluginsetup.h"
@@ -34,7 +35,7 @@ int main(int argc, char *argv[]) {
     // Commands that need no display run without a GUI application, so the
     // bar and the units can call them without touching Wayland.
     static const QStringList headless{"status", "sync", "pause", "resume", "run-condition", "run", "notify",
-                                      "watchdog", "takeover"};
+                                      "watchdog", "takeover", "fix", "fix-run"};
     if (headless.contains(command)) {
         QCoreApplication app(argc, argv);
         app.setApplicationName("drivesync");
@@ -55,7 +56,9 @@ int main(int argc, char *argv[]) {
             return runRunCommand(paths, err);
         if (command == "takeover")
             return runTakeoverCommand(rest, TakeoverPaths::defaults(), paths, out, err);
-        if (command == "notify" || command == "watchdog") {
+        if (command == "fix")
+            return runFixCommand(rest, paths, out, err);
+        if (command == "notify" || command == "watchdog" || command == "fix-run") {
             // The cards are read by a person, in the Omarchy language.
             Translator translator;
             app.installTranslator(&translator);
@@ -65,6 +68,9 @@ int main(int argc, char *argv[]) {
                 return runNotifyCommand(qEnvironmentVariable("SERVICE_RESULT"), paths, tools, now);
             QString error;
             const auto config = loadSyncConfig(paths.config, &error);
+            if (command == "fix-run")
+                return runFixUnit(paths, config.value_or(SyncConfig()), FixTools::defaults(), tools,
+                                  config ? QString() : error);
             return runWatchdogCommand(paths, config.value_or(SyncConfig()), tools, now, config ? QString() : error);
         }
         // run-condition: 255 is not a skip for systemd but a failure, which

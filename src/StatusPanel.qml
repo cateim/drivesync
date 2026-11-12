@@ -11,7 +11,7 @@ Rectangle {
     property double now
     readonly property string status: backend.status
     readonly property var current: backend.currentRun
-    readonly property bool busy: status === "running" || status === "resync"
+    readonly property bool busy: status === "running" || status === "resync" || status === "fixing"
     readonly property bool hasCurrent: !!current && current.start !== undefined
     readonly property real elapsed: hasCurrent ? Math.max(0, (now - current.start.getTime()) / 1000) : 0
     // The grouping comes from the backend, so the window, the bar and the
@@ -58,6 +58,9 @@ Rectangle {
         case "unavailable": return qsTr("Can't ask systemd")
         case "notLoaded": return qsTr("drive-sync.service doesn't load")
         case "noLog": return qsTr("No drive-sync log")
+        case "fixing": return qsTr("Fixing Drive")
+        case "fixWaiting": return qsTr("The fix is waiting for you")
+        case "fixFailed": return qsTr("The fix stopped")
         }
         return qsTr("Reading drive-sync…")
     }
@@ -74,13 +77,15 @@ Rectangle {
 
     function causeText(kind, detail) {
         switch (kind) {
-        // Until DriveSync can resync (step 3), a managed setup goes back to the old scripts for it.
+        // DriveSync fixes the drive-sync it runs; the old scripts fix their own.
         case "lostListings": return backend.managed
-            ? qsTr("bisync lost its listings, the base of both sides. To recover: drivesync takeover --undo, then drive-sync.sh resync")
+            ? qsTr("bisync lost its listings, the base of both sides. Press F to fix it.")
             : qsTr("bisync lost its listings, the base of both sides. To recover: drive-sync.sh resync")
         case "outOfSync": return backend.managed
-            ? qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: drivesync takeover --undo, then drive-sync.sh resync")
+            ? qsTr("The listings of the two sides don't match, so bisync dropped its base. Press F to fix it.")
             : qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: drive-sync.sh resync")
+        case "filtersChanged": return qsTr("The filters changed since the last base, so every run waits. Press F to rebuild the base with them.")
+        case "maxDelete": return qsTr("%1\nA fix would bring the deleted files back, so F is off. Restore them, or let one run through by hand with --force.").arg(detail)
         case "timeout": return qsTr("The run went past its time limit (TimeoutStartSec) and systemd stopped it.")
         case "systemd": return qsTr("systemd says the last run failed (%1), and the log has nothing about it.").arg(detail)
         case "error": return detail
@@ -135,6 +140,34 @@ Rectangle {
             .arg(Format.when(run.start, now, clockFormat.timeFormat)).arg(Format.ago(run.start, now)).arg(Format.home(backend.logPath))
     }
 
+    function fixLines() {
+        const lines = []
+        switch (status) {
+        case "fixing":
+            if (backend.fixStep === "preparing")
+                lines.push(qsTr("Waiting for a run to end, then a dry run of the base."))
+            else if (backend.fixStep === "base")
+                lines.push(qsTr("Rebuilding the base of both sides (about 40 min). The folder stays in use."))
+            else
+                lines.push(qsTr("Applying your answers, then a normal run."))
+            lines.push(progressLine())
+            break
+        case "fixWaiting":
+            lines.push(backend.fixStep === "confirm"
+                ? qsTr("The dry run would make %Ln copies. Press F to see them and confirm.", "", backend.fixCopies)
+                : qsTr("%Ln files changed in the cloud during the base run. Press F to answer for each one.", "", backend.fixQuestions.length))
+            break
+        case "fixFailed":
+            lines.push(backend.causeKind === "fixInterrupted"
+                ? qsTr("It stopped halfway: a logout, a shutdown or a kill.")
+                : backend.causeDetail,
+                qsTr("Press F to retry or cancel it."))
+            break
+        }
+        lines.push(qsTr("Runs wait until the fix ends."))
+        return lines
+    }
+
     function details() {
         translator.language
         const lines = []
@@ -182,6 +215,11 @@ Rectangle {
             break
         case "noLog":
             lines.push(qsTr("Expected at %1.").arg(Format.home(backend.logPath)))
+            break
+        case "fixing":
+        case "fixWaiting":
+        case "fixFailed":
+            lines.push(...fixLines())
             break
         }
         return lines.filter(line => line !== "").join("\n")

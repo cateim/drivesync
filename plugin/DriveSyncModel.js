@@ -9,7 +9,8 @@ var EPOCH_MAX = 99999999999
 
 // Every status the app can print (Backend::summarize), and its tones.
 var STATUSES = ["ok", "running", "resync", "paused", "failed", "interrupted", "skipped", "timerOff",
-                "stale", "noDrive", "noRuns", "noLog", "notLoaded", "unavailable", "conflicts"]
+                "stale", "noDrive", "noRuns", "noLog", "notLoaded", "unavailable", "conflicts",
+                "fixing", "fixWaiting", "fixFailed"]
 var TONES = ["ok", "busy", "warning", "error"]
 var OUTCOMES = ["success", "failed", "interrupted"]
 
@@ -113,7 +114,8 @@ function barState(snapshot) {
   if (snapshot.status === "paused") return "paused"
   switch (snapshot.tone) {
     case "ok": return "ok"
-    case "busy": return snapshot.status === "resync" ? "resync" : "syncing"
+    // A fix rebuilds the base, as a resync does.
+    case "busy": return snapshot.status === "resync" || snapshot.status === "fixing" ? "resync" : "syncing"
     case "warning": return "warning"
     case "error": return snapshot.status === "failed" ? "failing" : "broken"
   }

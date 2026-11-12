@@ -8,6 +8,7 @@
 #include <QStandardPaths>
 #include <unistd.h>
 
+#include "fixstate.h"
 #include "pausestate.h"
 
 namespace {
@@ -42,6 +43,10 @@ QString startOneRun(const BackendPaths &paths) {
 }
 
 }  // namespace
+
+int commandAnswer(bool json, const QString &error, QTextStream &out, QTextStream &err) {
+    return answer(json, error, out, err);
+}
 
 QString takeoverLockPath(const QString &appState) { return appState + "/takeover-running"; }
 
@@ -144,6 +149,10 @@ int runResumeCommand(const QStringList &arguments, const BackendPaths &paths, QT
 }
 
 int runConditionCommand(const BackendPaths &paths, const SyncConfig &config, const QDateTime &now) {
+    // A fix holds every run from its first step to its end: its own unit
+    // runs rclone, and a normal run in between would break the new base.
+    if (fixPresent(paths.appState))
+        return 1;
     if (!config.runOnlyWhen.isEmpty()) {
         // As systemd reads an ExecCondition: a crash or 255 is a failure,
         // any other non-zero exit a skip.

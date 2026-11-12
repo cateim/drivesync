@@ -9,7 +9,10 @@ HEADERS += \
     src/clockformat.h \
     src/conflictcache.h \
     src/controlcommands.h \
+    src/fixcommand.h \
+    src/fixstate.h \
     src/legacymigration.h \
+    src/listingdiff.h \
     src/notifier.h \
     src/pausestate.h \
     src/pluginsetup.h \
@@ -28,7 +31,10 @@ SOURCES += \
     src/clockformat.cpp \
     src/conflictcache.cpp \
     src/controlcommands.cpp \
+    src/fixcommand.cpp \
+    src/fixstate.cpp \
     src/legacymigration.cpp \
+    src/listingdiff.cpp \
     src/notifier.cpp \
     src/pausestate.cpp \
     src/pluginsetup.cpp \

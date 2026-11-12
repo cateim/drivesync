@@ -115,9 +115,9 @@ bool filtersUsable(const QString &filtersFile, QString *why) {
         return fail(why, QString("the filters file %1 cannot be read").arg(filtersFile));
     QFile stored(filtersFile + ".md5");
     if (!stored.open(QIODevice::ReadOnly))
-        return fail(why, QString("%1.md5 is missing, so bisync would lose its base").arg(filtersFile));
+        return fail(why, QString("%1.md5 is missing, %2").arg(filtersFile, kFiltersChangedReason));
     const QByteArray actual = QCryptographicHash::hash(filters.readAll(), QCryptographicHash::Md5).toHex();
     if (stored.readAll().trimmed() != actual)
-        return fail(why, QString("%1 changed since the last resync, so bisync would lose its base").arg(filtersFile));
+        return fail(why, QString("%1 changed since the last resync, %2").arg(filtersFile, kFiltersChangedReason));
     return true;
 }

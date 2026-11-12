@@ -38,3 +38,11 @@ int runNotifyCommand(const QString &serviceResult, const BackendPaths &paths, co
 // that cannot be read (configError) is the problem it reports.
 int runWatchdogCommand(const BackendPaths &paths, const SyncConfig &config, const NotifierPaths &tools,
                        const QDateTime &now, const QString &configError = {});
+
+// A fix that waits for the user (stopped false) or stopped: the card the unit
+// sends at once, and the watchdog repeats every hour.
+void notifyFixNeedsYou(const NotifierPaths &tools, const FixState &state, bool stopped);
+
+// A fix ended with a normal run that worked: the "stopped" card goes, and a
+// normal one says Drive syncs again.
+void notifyFixEnded(const BackendPaths &paths, const NotifierPaths &tools);

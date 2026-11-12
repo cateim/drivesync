@@ -32,3 +32,6 @@ QStringList rcloneRunArguments(const SyncConfig &config);
 // the sync back (tried with rclone 1.75 on 2026-11-08). So nothing starts
 // rclone unless this is true.
 bool filtersUsable(const QString &filtersFile, QString *why);
+// Ends every refusal of filtersUsable, so the log parser can tell a run
+// refused for changed filters (which a fix repairs) from any other error.
+inline constexpr char kFiltersChangedReason[] = "so bisync would lose its base";

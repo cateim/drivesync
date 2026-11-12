@@ -70,6 +70,12 @@ Snapshot buildSnapshot(const SnapshotSources &src) {
     in.lastSuccess = s.lastSuccess;
     in.now = now;
     in.conflicts = src.conflicts;
+    if (src.fixPresent) {
+        in.fixStep = src.fix.step;
+        in.fixError = src.fix.error;
+        const bool starting = src.fix.stepStarted.isValid() && src.fix.stepStarted.secsTo(now) < kFixStartGraceSeconds;
+        in.fixInterrupted = fixWorking(src.fix.step) && !src.fixUnitActive && !starting;
+    }
 
     std::sort(durations.begin(), durations.end());
     s.typicalSeconds = durations.isEmpty() ? 0 : int(durations.at(durations.size() / 2));
@@ -77,7 +83,8 @@ Snapshot buildSnapshot(const SnapshotSources &src) {
     s.summary = Backend::summarize(in);
     s.tone = toneFor(s.summary.status);
     s.running = running;
-    s.resync = src.resyncRunning;
+    // The bar shows a fix at work with the resync icon: it is one.
+    s.resync = src.resyncRunning || s.summary.status == "fixing";
     s.conflicts = src.conflicts;
     s.managed = src.managed;
     s.paused = paused;
@@ -85,7 +92,7 @@ Snapshot buildSnapshot(const SnapshotSources &src) {
     // A run started while paused would only be skipped by run-condition; one
     // after the pause ended runs and clears the mark.
     s.canSyncNow = src.systemctlWorks && in.serviceLoad == "loaded" && !serviceBusy && !running && !src.resyncRunning
-                   && !(paused && !pauseEnded(src.pause, now));
+                   && !(paused && !pauseEnded(src.pause, now)) && !src.fixPresent;
     if (lastFinished) {
         s.lastRunStart = lastFinished->start;
         s.lastRunEnd = lastFinished->end;
@@ -133,13 +140,13 @@ QJsonObject snapshotToJson(const Snapshot &s, const QDateTime &nextRun, const QD
 }
 
 QString toneFor(const QString &status) {
-    static const QStringList errors{"failed", "timerOff", "unavailable", "notLoaded", "noLog", "noDrive"};
-    static const QStringList warnings{"interrupted", "skipped", "paused", "stale", "noRuns", "conflicts"};
+    static const QStringList errors{"failed", "timerOff", "unavailable", "notLoaded", "noLog", "noDrive", "fixFailed"};
+    static const QStringList warnings{"interrupted", "skipped", "paused", "stale", "noRuns", "conflicts", "fixWaiting"};
     if (errors.contains(status))
         return "error";
     if (warnings.contains(status))
         return "warning";
-    if (status == "running" || status == "resync")
+    if (status == "running" || status == "resync" || status == "fixing")
         return "busy";
     // Only "ok" is fine: a status added without a tone shows up as an error
     // instead of a green cloud.
@@ -147,8 +154,14 @@ QString toneFor(const QString &status) {
 }
 
 QStringList systemdShowArguments() {
-    return {"--user", "show", "--timestamp=unix", "drive-sync.service", "drive-sync.timer", "-p",
+    return {"--user", "show", "--timestamp=unix", "drive-sync.service", "drive-sync.timer", "drive-sync-fix.service", "-p",
             "LoadState,ActiveState,Result,ExecMainStartTimestamp,UnitFileState"};
+}
+
+bool fixUnitBusy(const QHash<QString, QString> &unit) {
+    // A oneshot unit is "activating" for as long as its ExecStart runs.
+    const QString active = unit.value("ActiveState");
+    return active == "activating" || active == "active" || active == "deactivating" || active == "reloading";
 }
 
 QStringList listTimersArguments() {

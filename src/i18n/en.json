@@ -1,4 +1,5 @@
 {
+  "%Ln files changed in the cloud during the base run. Press F to answer for each one.": { "one": "%Ln file changed in the cloud during the base run. Press F to answer for it.", "other": "%Ln files changed in the cloud during the base run. Press F to answer for each one." },
   "%n min ago": { "one": "%n min ago", "other": "%n min ago" },
   "%n h ago": { "one": "%n h ago", "other": "%n h ago" },
   "%n days ago": { "one": "%n day ago", "other": "%n days ago" },
@@ -7,5 +8,7 @@
   "Next run in %n min.": { "one": "Next run in %n min.", "other": "Next run in %n min." },
   "%Ln files listed.": { "one": "%Ln file listed.", "other": "%Ln files listed." },
   "%Ln changes": { "one": "%Ln change", "other": "%Ln changes" },
-  "And %Ln more.": { "one": "And %Ln more.", "other": "And %Ln more." }
+  "And %Ln more.": { "one": "And %Ln more.", "other": "And %Ln more." },
+  "The dry run says the base run would make %Ln copies, each side getting what it lacks and the newer file winning:": { "one": "The dry run says the base run would make %Ln copy, each side getting what it lacks and the newer file winning:", "other": "The dry run says the base run would make %Ln copies, each side getting what it lacks and the newer file winning:" },
+  "The dry run would make %Ln copies. Press F to see them and confirm.": { "one": "The dry run would make %Ln copy. Press F to see it and confirm.", "other": "The dry run would make %Ln copies. Press F to see them and confirm." }
 }

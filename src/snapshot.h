@@ -9,6 +9,7 @@
 #include <QVariantList>
 #include <QVariantMap>
 
+#include "fixstate.h"
 #include "pausestate.h"
 #include "synclog.h"
 
@@ -28,6 +29,9 @@ constexpr int kStateRuns = 1000000;
 // rclone renews its lock and prints stats every minute, so an open run with
 // nothing newer than this is no longer running.
 constexpr int kAliveSeconds = 150;
+// "drivesync fix" writes the next step and then asks systemd to start the
+// unit: for this long an inactive unit is still starting, not a dead fix.
+constexpr int kFixStartGraceSeconds = 60;
 
 // Everything the headline is decided from, gathered in one plain struct so
 // the rules can be tested without systemd or a log.
@@ -51,6 +55,9 @@ struct SyncInputs {
     QDateTime lastSuccess;
     QDateTime now;
     int conflicts = 0;
+    QString fixStep;          // the fix's step (fixstate.h), empty when no fix
+    bool fixInterrupted = false;  // a working step with drive-sync-fix.service gone
+    QString fixError;         // why the fix stopped
 };
 
 struct SyncSummary {
@@ -73,6 +80,9 @@ struct SnapshotSources {
     int conflicts = 0;
     bool managed = false;             // DriveSync's own units run drive-sync
     PauseMark pause;
+    FixState fix;                     // readFix, when fixPresent
+    bool fixPresent = false;
+    bool fixUnitActive = false;       // drive-sync-fix.service is starting or running a step
     QDateTime now;                    // UTC
 };
 
@@ -104,7 +114,11 @@ QJsonObject snapshotToJson(const Snapshot &s, const QDateTime &nextRun, const QD
 // "ok" | "busy" | "warning" | "error": how urgent a headline is.
 QString toneFor(const QString &status);
 // The two systemctl calls every reader makes, so they cannot drift apart.
+// The show call describes drive-sync.service, drive-sync.timer and
+// drive-sync-fix.service, in that order.
 QStringList systemdShowArguments();
 QStringList listTimersArguments();
+// drive-sync-fix.service's parseShow block says it is starting or running a step.
+bool fixUnitBusy(const QHash<QString, QString> &unit);
 // "systemctl show --timestamp=unix" prints "@1794076098", or nothing.
 QDateTime fromUnixStamp(const QString &value);

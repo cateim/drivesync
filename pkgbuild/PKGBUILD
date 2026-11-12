@@ -32,7 +32,7 @@ package() {
   # in ~/.config/systemd/user wins over these.
   install -Dm644 pkgbuild/units/drive-sync.service pkgbuild/units/drive-sync.timer \
     pkgbuild/units/drive-sync-watchdog.service pkgbuild/units/drive-sync-watchdog.timer \
-    -t "$pkgdir/usr/lib/systemd/user"
+    pkgbuild/units/drive-sync-fix.service -t "$pkgdir/usr/lib/systemd/user"
 
   # The bar widget. Omarchy loads third-party plugins only from
   # ~/.config/omarchy/plugins, which a package cannot write, so it lands here

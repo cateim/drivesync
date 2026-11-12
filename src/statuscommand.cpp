@@ -71,10 +71,11 @@ SnapshotSources gatherSources(const BackendPaths &paths, const QDateTime &now, i
     QByteArray show;
     const bool showOk = runAndWait(paths.systemctl, systemdShowArguments(), timeoutMs, &show);
     const auto units = Backend::parseShow(show);
-    src.systemctlWorks = showOk && units.size() == 2;
+    src.systemctlWorks = showOk && units.size() == 3;
     if (src.systemctlWorks) {
         src.service = units.at(0);
         src.timer = units.at(1);
+        src.fixUnitActive = fixUnitBusy(units.at(2));
         QByteArray timers;
         if (nextRun && runAndWait(paths.systemctl, listTimersArguments(), timeoutMs, &timers))
             *nextRun = Backend::parseNextElapse(timers);
@@ -84,8 +85,12 @@ SnapshotSources gatherSources(const BackendPaths &paths, const QDateTime &now, i
     src.driveFound = QFileInfo(paths.drive).isDir();
     src.conflicts = src.driveFound ? countConflicts(paths, now) : 0;
     src.managed = paths.managed;
-    if (!paths.appState.isEmpty())
+    if (!paths.appState.isEmpty()) {
         src.pause = readPause(pauseFilePath(paths.appState));
+        src.fixPresent = fixPresent(paths.appState);
+        if (src.fixPresent)
+            src.fix = readFix(paths.appState);
+    }
     return src;
 }
 
@@ -125,6 +130,7 @@ QString usageText() {
            "       drivesync pause [--minutes N | --until-tomorrow] [--json]\n"
            "       drivesync resume [--json]\n"
            "       drivesync takeover --check | --apply | --undo [--json]\n"
-           "       drivesync run-condition | run | notify | watchdog    (for the units)\n"
+           "       drivesync fix --start | --confirm | --answers <file.json> | --cancel | --retry [--json]\n"
+           "       drivesync run-condition | run | notify | watchdog | fix-run    (for the units)\n"
            "       drivesync --help\n";
 }

@@ -86,7 +86,8 @@ void close(const NotifierPaths &tools, int id, const QStringList &titles) {
 
 // An ongoing problem: shown the first time, then every hour.
 void reportProblem(const NotifierPaths &tools, const QString &file, const QString &firstTitle,
-                   const QString &reminderTitle, const QString &text, const QString &footer, const QDateTime &now) {
+                   const QString &reminderTitle, const QString &text, const QString &footer, const QDateTime &now,
+                   const QString &urgency = "critical") {
     Problem p = readProblem(file);
     QString title;
     if (!p.since.isValid()) {
@@ -100,7 +101,8 @@ void reportProblem(const NotifierPaths &tools, const QString &file, const QStrin
     }
     // Also the first time: an old card of the same problem does not stay stacked.
     close(tools, p.id, {firstTitle, reminderTitle});
-    const int id = notify(tools, "critical", "dialog-warning", title, text + "\n" + footer.arg(at(tools, p.since)));
+    const int id = notify(tools, urgency, urgency == "critical" ? "dialog-warning" : "dialog-information", title,
+                          text + "\n" + footer.arg(at(tools, p.since)));
     p.last = id > 0 ? now : QDateTime();
     p.id = id;
     writeProblem(file, p);
@@ -119,11 +121,13 @@ void reportSolved(const NotifierPaths &tools, const QString &file, const QString
 
 QString causeSentence(const QString &kind, const QString &detail) {
     if (kind == "lostListings")
-        return tr("bisync lost its listings, the base of both sides. "
-                  "To recover: drivesync takeover --undo, then drive-sync.sh resync");
+        return tr("bisync lost its listings, the base of both sides. To recover: open DriveSync and press F.");
     if (kind == "outOfSync")
         return tr("The listings of the two sides don't match, so bisync dropped its base. "
-                  "To recover: drivesync takeover --undo, then drive-sync.sh resync");
+                  "To recover: open DriveSync and press F.");
+    if (kind == "filtersChanged")
+        return tr("The filters changed since the last base, so every run waits. "
+                  "Open DriveSync and press F to rebuild the base with them.");
     return detail;
 }
 
@@ -131,7 +135,7 @@ QString causeSentence(const QString &kind, const QString &detail) {
 // with it count, as in drive-sync-aviso; the log parser already turns an
 // error before "Synching Path1" (rclone that did not start, or DriveSync's
 // refusal) into a failed run of its own.
-QString cause(const QString &serviceResult, const BackendPaths &paths) {
+QString cause(const QString &serviceResult, const BackendPaths &paths, QString *kind) {
     if (serviceResult == "timeout")
         return tr("The run went past its time limit (TimeoutStartSec) and was stopped.");
     QByteArray stamp;
@@ -145,6 +149,7 @@ QString cause(const QString &serviceResult, const BackendPaths &paths) {
     // The log keeps whole seconds; systemd's start can be up to a second later.
     if (!runs.isEmpty() && (!started.isValid() || runs.last().start >= started.addSecs(-2))
         && runs.last().outcome == "failed") {
+        *kind = runs.last().causeKind;
         const QString sentence = causeSentence(runs.last().causeKind, runs.last().causeDetail);
         if (!sentence.isEmpty())
             return sentence.left(200);
@@ -180,6 +185,35 @@ QString timerProblem(const BackendPaths &paths) {
     return {};
 }
 
+// A fix waiting for the user, or stopped, holds every run: a card every
+// hour, counted from when its step began, so a forgotten fix cannot become
+// the silent outage this app exists to prevent.
+void remindOfFix(const BackendPaths &paths, const NotifierPaths &tools, const QDateTime &now) {
+    if (!fixPresent(paths.appState))
+        return;
+    const FixState state = readFix(paths.appState);
+    bool stopped = state.step == "failed";
+    if (fixWorking(state.step)) {
+        const bool starting = state.stepStarted.isValid() && state.stepStarted.secsTo(now) < kFixStartGraceSeconds;
+        const QString active =
+            showValue(paths, {"--user", "show", "-p", "ActiveState", "--value", "drive-sync-fix.service"});
+        if (starting || fixUnitBusy({{"ActiveState", active}}))
+            return;  // at work
+        stopped = true;  // the unit left the step halfway
+    }
+    const QDateTime since = state.stepStarted.isValid() ? state.stepStarted : now;
+    const QDateTime last = state.lastReminder.isValid() ? state.lastReminder : since;
+    if (last.secsTo(now) < kRepeatSeconds)
+        return;
+    notifyFixNeedsYou(tools, state, stopped);
+    // notify-send can take seconds: a step that moved on in the meantime wins.
+    FixState current = readFix(paths.appState);
+    if (current.step != state.step || current.stepStarted != state.stepStarted)
+        return;
+    current.lastReminder = now;
+    writeFix(paths.appState, current);
+}
+
 void remindOfPause(const BackendPaths &paths, const NotifierPaths &tools, const QDateTime &now) {
     const QString file = pauseFilePath(paths.appState);
     PauseMark mark = readPause(file);
@@ -212,14 +246,23 @@ int runNotifyCommand(const QString &serviceResult, const BackendPaths &paths, co
     const QString file = paths.appState + "/notify-run.json";
     const QString stopped = tr("Drive stopped syncing");
     const QString stillStopped = tr("Drive is still stopped");
+    const QString filters = tr("Drive filters changed");
+    const QString stillFilters = tr("Drive filters still changed");
     if (serviceResult == "exec-condition")
-        return 0;  // skipped on purpose: paused, or runOnlyWhen said no
+        return 0;  // skipped on purpose: paused, a fix under way, or runOnlyWhen said no
     if (serviceResult == "success") {
-        reportSolved(tools, file, tr("Drive is syncing again"), tr("It had stopped at %1."), {stopped, stillStopped});
+        reportSolved(tools, file, tr("Drive is syncing again"), tr("It had stopped at %1."),
+                     {stopped, stillStopped, filters, stillFilters});
         return 0;
     }
-    reportProblem(tools, file, stopped, stillStopped, cause(serviceResult, paths),
-                  tr("Stopped since %1. Log: %2").arg("%1", paths.log), now);
+    QString kind;
+    const QString text = cause(serviceResult, paths, &kind);
+    // Changed filters are the user's own edit, waiting for F: news, not an alarm.
+    if (kind == "filtersChanged")
+        reportProblem(tools, file, filters, stillFilters, text, tr("Since %1."), now, "normal");
+    else
+        reportProblem(tools, file, stopped, stillStopped, text, tr("Stopped since %1. Log: %2").arg("%1", paths.log),
+                      now);
     return 0;
 }
 
@@ -241,5 +284,29 @@ int runWatchdogCommand(const BackendPaths &paths, const SyncConfig &config, cons
     else
         reportSolved(tools, file, tr("Drive timer is back"), tr("The problem was noticed at %1."), {noSync, stillNoSync});
     remindOfPause(paths, tools, now);
+    remindOfFix(paths, tools, now);
     return 0;
+}
+
+void notifyFixNeedsYou(const NotifierPaths &tools, const FixState &state, bool stopped) {
+    const QString waiting = tr("The Drive fix is waiting for you");
+    const QString halted = tr("The Drive fix stopped");
+    close(tools, 0, {waiting, halted});
+    if (stopped)
+        notify(tools, "critical", "dialog-warning", halted,
+               (state.error.isEmpty() ? tr("It stopped halfway.") : state.error.left(200)) + "\n"
+                   + tr("Drive does not sync until it ends. Open DriveSync to retry or cancel it."));
+    else
+        notify(tools, "normal", "dialog-information", waiting,
+               tr("Drive does not sync until you answer. Open DriveSync and press F."));
+}
+
+void notifyFixEnded(const BackendPaths &paths, const NotifierPaths &tools) {
+    const QString file = paths.appState + "/notify-run.json";
+    close(tools, readProblem(file).id,
+          {tr("Drive stopped syncing"), tr("Drive is still stopped"), tr("Drive filters changed"),
+           tr("Drive filters still changed")});
+    QFile::remove(file);
+    notify(tools, "normal", "dialog-information", tr("Drive is syncing again"),
+           tr("The fix rebuilt the base of both sides."));
 }

@@ -37,7 +37,7 @@ struct SyncRun {
     QList<SyncChange> changes;
     int changesOmitted = 0;
     QStringList errors;
-    QString causeKind;      // failed runs only: "lostListings", "outOfSync", "error" or "none"
+    QString causeKind;      // failed runs only: "lostListings", "outOfSync", "filtersChanged", "maxDelete", "error" or "none"
     QString causeDetail;    // the error line behind "error"
 };
 

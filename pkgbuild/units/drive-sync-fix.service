@@ -1,0 +1,17 @@
+# Shipped by DriveSync. Only "drivesync fix" starts it, so it has no
+# [Install] section: it rebuilds the bisync base of both sides (spec section
+# 5) in its own unit, so closing the window, logging out or suspending does
+# not kill a step halfway. Each start runs the fix's current step and the
+# ones after it, until the fix needs the user, fails or ends; the step is
+# kept in ~/.local/state/drivesync/fix.json.
+[Unit]
+Description=drive-sync: rebuild the base of both sides, run by DriveSync
+
+[Service]
+Type=oneshot
+# A base run takes about 40 min; a stuck step becomes a failed fix the
+# window offers to retry, instead of holding the runs forever.
+TimeoutStartSec=4h
+ExecStart=/usr/bin/drivesync fix-run
+Nice=10
+IOSchedulingClass=idle
