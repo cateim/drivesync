@@ -39,5 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clock times show 12 or 24 hours like the clock on the Omarchy bar, in the window, the bar panel and the notifications, and follow a right click on that clock. The window showed AM/PM whenever Omarchy was in English, even with the bar clock on 24 hours, and the panel always showed 24 hours.
 - `drivesync --help` (and `-h`, `help`) prints the usage. It opened the window, like every argument that starts with a dash.
 - A warning on the bar (conflict copies, a late, skipped or interrupted run) turns the cloud and the panel icon orange, the same orange as the window. It looked just like an up-to-date sync.
+- A log with no run in it (new, or just rotated) shows "No sync in the log yet" as a warning in the window and on the bar. It showed a green "In sync", and the bar "Synced at -".
+- A failure only systemd saw (the log ends in a good run) says it is failing since the service's last start, not since that good run.
+- The failing line in the bar panel has a sentence for a run stopped at its time limit and for a failure only systemd reports, and is never blank.
+- When `omarchy plugin list` fails as the window opens, the window no longer says it could not put DriveSync on the bar: nobody asked yet. After `B` it still does.
+- `N` also hides the notice that someone else's folder or link holds the widget's place, which came back at every start.
 
 [Unreleased]: https://github.com/CaTeIM/drivesync/commits/master

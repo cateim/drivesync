@@ -9,7 +9,7 @@ var EPOCH_MAX = 99999999999
 
 // Every status the app can print (Backend::summarize), and its tones.
 var STATUSES = ["ok", "running", "resync", "paused", "failed", "interrupted", "skipped", "timerOff",
-                "stale", "noDrive", "noLog", "notLoaded", "unavailable", "conflicts"]
+                "stale", "noDrive", "noRuns", "noLog", "notLoaded", "unavailable", "conflicts"]
 var TONES = ["ok", "busy", "warning", "error"]
 var OUTCOMES = ["success", "failed", "interrupted"]
 

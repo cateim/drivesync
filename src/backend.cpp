@@ -296,7 +296,7 @@ void Backend::recompute() {
 
 // The headline, most urgent first. Statuses: "unavailable", "notLoaded",
 // "running", "resync", "paused", "noLog", "failed", "interrupted", "skipped",
-// "timerOff", "stale", "noDrive", "conflicts", "ok". Warnings carry what the
+// "timerOff", "stale", "noDrive", "noRuns", "conflicts", "ok". Warnings carry what the
 // headline leaves out: "timerOff", "timerDisabled", "conflicts".
 SyncSummary Backend::summarize(const SyncInputs &in) {
     SyncSummary s;
@@ -348,6 +348,10 @@ SyncSummary Backend::summarize(const SyncInputs &in) {
         s.status = "stale";
     } else if (!in.driveFound) {
         s.status = "noDrive";
+    } else if (!in.lastStart.isValid()) {
+        // An empty log (new, or just rotated) proves no sync: "stale" needs a
+        // last success to count from, so without this it stayed green.
+        s.status = "noRuns";
     } else if (in.conflicts > 0) {
         s.status = "conflicts";
     } else {

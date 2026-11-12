@@ -543,6 +543,30 @@ private slots:
         QVERIFY(!found);
     }
 
+    // A log with no run (new, or just rotated) proves nothing: not green.
+    void summarizesALogWithNoRuns()
+    {
+        SyncInputs in = healthy();
+        in.lastStart = QDateTime();
+        in.lastOutcome.clear();
+        in.lastSuccess = QDateTime();
+        QCOMPARE(Backend::summarize(in).status, QString("noRuns"));
+        QCOMPARE(toneFor("noRuns"), QString("warning"));
+        in.conflicts = 2;
+        QCOMPARE(Backend::summarize(in).status, QString("noRuns"));
+        QCOMPARE(Backend::summarize(in).warnings, QStringList{"conflicts"});
+        in.driveFound = false;  // the more urgent headline wins
+        QCOMPARE(Backend::summarize(in).status, QString("noDrive"));
+
+        const QDateTime t0(QDate(2026, 11, 7), QTime(12, 0, 0));
+        SnapshotSources src = idleSources("", t0);
+        src.driveFound = true;
+        const Snapshot snap = buildSnapshot(src);
+        QCOMPARE(snap.summary.status, QString("noRuns"));
+        QCOMPARE(snap.tone, QString("warning"));
+        QVERIFY(!snap.lastSuccess.isValid());
+    }
+
     void summarizesAHealthySync()
     {
         const auto s = Backend::summarize(healthy());
@@ -804,11 +828,14 @@ private slots:
     {
         for (const char *s : {"failed", "timerOff", "unavailable", "notLoaded", "noLog", "noDrive"})
             QCOMPARE(toneFor(s), QString("error"));
-        for (const char *s : {"interrupted", "skipped", "stale", "conflicts"})
+        for (const char *s : {"interrupted", "skipped", "stale", "noRuns", "conflicts"})
             QCOMPARE(toneFor(s), QString("warning"));
         QCOMPARE(toneFor("running"), QString("busy"));
         QCOMPARE(toneFor("resync"), QString("busy"));
         QCOMPARE(toneFor("ok"), QString("ok"));
+        // A status nobody gave a tone is a mistake, and must not look fine.
+        QCOMPARE(toneFor("somethingNew"), QString("error"));
+        QCOMPARE(toneFor(""), QString("error"));
     }
 
     // Two failures after a success: the problem started with the first one.
@@ -820,6 +847,21 @@ private slots:
         const Snapshot s = buildSnapshot(src);
         QCOMPARE(s.summary.status, QString("failed"));
         QCOMPARE(s.failingSince, src.runs.at(1).start);
+    }
+
+    // The log ends in a success but systemd says the last start failed: the
+    // trouble began with that start, not with the good run before it.
+    void snapshotFailingSinceForAFailureOnlySystemdSaw()
+    {
+        const QDateTime t0(QDate(2026, 11, 7), QTime(12, 0, 0));
+        SnapshotSources src = idleSources(successfulRun(t0, 480), t0.addSecs(1000));
+        const QDateTime started = t0.addSecs(900).toUTC();
+        src.service.insert("Result", "exit-code");
+        src.service.insert("ExecMainStartTimestamp", QString("@%1").arg(started.toSecsSinceEpoch()));
+        const Snapshot s = buildSnapshot(src);
+        QCOMPARE(s.summary.status, QString("failed"));
+        QCOMPARE(s.summary.causeKind, QString("systemd"));
+        QCOMPARE(s.failingSince, started);
     }
 
     void snapshotNoFailingSinceWhenOk()
@@ -1056,6 +1098,29 @@ private slots:
         QVERIFY(calls(dir.path()).isEmpty());
     }
 
+    // A link someone else made (a dev copy, say) is theirs too, and so is a
+    // dangling one: exists() says false for it, isSymLink() does not.
+    void pluginSetupLeavesForeignAndDanglingLinks()
+    {
+        for (const bool dangling : {false, true}) {
+            QTemporaryDir dir;
+            const PluginPaths paths = fakeOmarchy(dir.path(), "[]");
+            const QString elsewhere = dir.filePath(dangling ? "gone" : "dev-copy");
+            if (!dangling)
+                QVERIFY(QDir().mkpath(elsewhere));
+            QVERIFY(QDir().mkpath(paths.userPlugins));
+            const QString link = paths.userPlugins + "/drivesync";
+            QVERIFY(QFile::link(elsewhere, link));
+            PluginSetup setup(paths);
+            setup.check();
+            QTRY_COMPARE(setup.state(), QString("blocked"));
+            QCOMPARE(setup.detail(), link);
+            QVERIFY(QFileInfo(link).isSymLink());
+            QCOMPARE(QFileInfo(link).symLinkTarget(), elsewhere);
+            QVERIFY(calls(dir.path()).isEmpty());
+        }
+    }
+
     // SyncWatch's widget, renamed: the new one takes its place on the bar by
     // itself, then the old entry and its dangling link go.
     void pluginSetupTakesOverTheSyncWatchWidget()
@@ -1151,6 +1216,58 @@ private slots:
         again.check();
         QCOMPARE(again.state(), QString("declined"));
         QVERIFY(!QFileInfo(paths.userPlugins + "/drivesync").isSymLink());
+        QVERIFY(calls(dir.path()).isEmpty());
+    }
+
+    // omarchy failing to list its plugins at start is no banner: nobody asked
+    // for anything. After B the same failure is.
+    void pluginSetupListFailureNeedsAnAsk()
+    {
+        QTemporaryDir dir;
+        const PluginPaths paths = fakeOmarchy(dir.path(), "[]");
+        const QString omarchy = QString(
+            "#!/bin/sh\n"
+            "echo \"$*\" >> '%1/calls.log'\n"
+            "case \"$*\" in\n"
+            "  'plugin list --json') [ -e '%1/list-fails' ] && { echo 'no shell' >&2; exit 1; }; cat '%1/list.json' ;;\n"
+            "esac\n").arg(dir.path());
+        QVERIFY(write(paths.omarchy, omarchy.toUtf8()));
+        QVERIFY(write(dir.filePath("list-fails"), ""));
+        {
+            PluginSetup setup(paths);
+            setup.check();
+            QTRY_COMPARE(setup.state(), QString("unchecked"));
+            QCOMPARE(setup.detail(), QString("no shell"));
+        }
+        QFile::remove(dir.filePath("list-fails"));
+        PluginSetup setup(paths);
+        setup.check();
+        QTRY_COMPARE(setup.state(), QString("offer"));
+        QVERIFY(write(dir.filePath("list-fails"), ""));
+        setup.accept();
+        QTRY_COMPARE(setup.state(), QString("failed"));
+        QCOMPARE(setup.detail(), QString("no shell"));
+    }
+
+    // The notice that the path is taken can be hidden for good, like the offer.
+    void pluginSetupBlockedCanBeDismissed()
+    {
+        QTemporaryDir dir;
+        PluginPaths paths = fakeOmarchy(dir.path(), "[]");
+        paths.declined = dir.filePath("app/bar-declined");
+        QVERIFY(QDir(paths.userPlugins).mkpath("drivesync"));
+        {
+            PluginSetup setup(paths);
+            setup.check();
+            QTRY_COMPARE(setup.state(), QString("blocked"));
+            setup.decline();
+            QCOMPARE(setup.state(), QString("declined"));
+            QVERIFY(QFileInfo::exists(paths.declined));
+        }
+        PluginSetup again(paths);
+        again.check();
+        QCOMPARE(again.state(), QString("declined"));
+        QVERIFY(QFileInfo(paths.userPlugins + "/drivesync").isDir());  // still theirs
         QVERIFY(calls(dir.path()).isEmpty());
     }
 

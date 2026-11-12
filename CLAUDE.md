@@ -81,12 +81,12 @@ assets/images/          README pictures: window-*.png from bin/harness over a ma
 
 ```sh
 bin/build            # about 30 s from clean
-bin/test             # 115 cases, about 5 s (one runs real rclone on temp folders)
+bin/test             # 120 cases, about 5 s (one runs real rclone on temp folders)
 bin/install          # needs sudo (pacman -U); run it in a real terminal
 bin/harness --scenario running --clock "h:mm AP" --out build/shot.png   # the window offscreen, made-up data; options atop tools/harness/harness.cpp
 makepkg -f           # from pkgbuild/, with BUILDDIR and PKGDEST set as in bin/install, to check packaging without sudo
 build/drivesync status --json   # the state as the bar sees it (0.13 s with a fresh conflict cache)
-(cd plugin && node --test tests/*.test.mjs)   # bar widget, 22 cases; the glob is required on Node 22
+(cd plugin && node --test tests/*.test.mjs)   # bar widget, 24 cases; the glob is required on Node 22
 build/drivesync takeover --check              # read-only: what a takeover would move, or what blocks it
 omarchy plugin validate plugin                # needs the folder path, not the plugin id
 ```
@@ -101,7 +101,8 @@ last run, `failingSince`, `canSyncNow` and the `tone` (`ok`, `busy`,
 headline, most urgent first:
 `unavailable` (systemctl failed), `notLoaded`, `running`, `resync`, `paused`, `noLog`,
 `failed`, `interrupted`, `skipped` (ExecCondition: emergency home), `timerOff`,
-`stale` (no success for 45 min), `noDrive`, `conflicts`, `ok`. What the
+`stale` (no success for 45 min), `noDrive`, `noRuns` (a log with no run:
+new or rotated), `conflicts`, `ok`. What the
 headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
 `conflicts`.
 
@@ -208,7 +209,10 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
   user agrees (`B`), runs `omarchy plugin enable drivesync`. A folder or a
   foreign link at that path is never touched.
   `N` says no and is remembered in `~/.local/state/drivesync/bar-declined`:
-  no offer and no new link afterwards, so a removal stays removed.
+  no offer and no new link afterwards, so a removal stays removed. `N` also
+  hides the "blocked" notice (someone else's folder or link at that path)
+  the same way. A failed `omarchy plugin list` before the user pressed `B`
+  is state `unchecked`, with no banner; after `B` it is `failed`.
 - A package upgrade reaches the bar only after a shell reload
   (`omarchy restart shell`): the plugin watcher's inotify does not follow the
   link into `/usr/share`.

@@ -6,7 +6,7 @@
 //
 //   bin/harness --out build/shot.png [options]   (build/shot.png by default)
 //   --lang en|pt-BR                      the Omarchy language
-//   --scenario ok|running|failed|clean   clean: no conflict copies
+//   --scenario ok|running|failed|clean|empty   clean: no conflict copies; empty: no run in the log
 //   --clock "<Qt format>"                the bar clock; without it, the system locale's hours
 //   --pause none|hour|forever|ended      a pause mark; --managed: DriveSync's own units
 //   --takeover none|offer|running|blocked|failed
@@ -99,9 +99,11 @@ int main(int argc, char **argv) {
         log += "Transferred:   \t 0 B / 0 B, -, 0 B/s, ETA -\nChecks:  41000 / 41000, 100%, Listed 41210\nElapsed time:  4m0.0s\n\n";
         active = "activating";
     }
+    if (scenario == "empty")
+        log.clear();  // a new or just rotated log
     put(dir.filePath("drive-sync.log"), log.toUtf8());
 
-    if (scenario != "clean") {
+    if (scenario != "clean" && scenario != "empty") {
         put(dir.filePath("Drive/Notes/ideas.md.conflict1"), QByteArray(2400, 'x'));
         put(dir.filePath("Drive/Spreadsheets/bills.xlsx.conflict1"), QByteArray(18300, 'x'));
     } else {

@@ -53,6 +53,7 @@ Rectangle {
         case "timerOff": return qsTr("drive-sync won't run")
         case "stale": return qsTr("No sync for a while")
         case "noDrive": return qsTr("The Drive folder isn't there")
+        case "noRuns": return qsTr("No sync in the log yet")
         case "conflicts": return qsTr("%n conflict copies to sort out", "", backend.conflicts.length)
         case "unavailable": return qsTr("Can't ask systemd")
         case "notLoaded": return qsTr("drive-sync.service doesn't load")
@@ -169,6 +170,9 @@ Rectangle {
             break
         case "noDrive":
             lines.push(qsTr("Expected at %1.").arg(Format.home(backend.drivePath)))
+            break
+        case "noRuns":
+            lines.push(qsTr("The log has no run yet, so nothing says the two sides match."), nextRunLine())
             break
         case "unavailable":
             lines.push(qsTr("systemctl didn't answer, so the state below comes from the log alone."))

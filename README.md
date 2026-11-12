@@ -60,7 +60,7 @@ also owns `~/.config/drivesync/` and the `drive-sync` user timers.
 | `U`              | Resume, and start a run                           |
 | `T`              | Let DriveSync run drive-sync, when offered        |
 | `B`              | Put DriveSync on the Omarchy bar, when offered    |
-| `N`              | Say no to that offer; it is not asked again       |
+| `N`              | Say no to that offer, or hide its notice for good |
 | `?`              | Show or hide the shortcuts                        |
 | `Q`              | Quit                                              |
 

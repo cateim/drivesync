@@ -21,7 +21,7 @@ Rectangle {
         { keys: "P   U", what: qsTr("Pause, and resume, once DriveSync runs drive-sync") },
         { keys: "T", what: qsTr("Let DriveSync run drive-sync, when offered") },
         { keys: "B", what: qsTr("Put DriveSync on the Omarchy bar, when offered") },
-        { keys: "N", what: qsTr("Say no to the bar offer; it is not asked again") },
+        { keys: "N", what: qsTr("Say no to the bar offer or notice, for good") },
         { keys: "?", what: qsTr("Show or hide these shortcuts") },
         { keys: "Q", what: qsTr("Quit") }
     ]

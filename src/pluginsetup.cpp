@@ -84,7 +84,7 @@ void PluginSetup::readList() {
     setState("checking");
     run(m_paths.omarchy, {"plugin", "list", "--json"}, [this](bool ok, const QByteArray &output, const QByteArray &error) {
         if (!ok) {
-            setState("failed", QString::fromUtf8(error).trimmed());
+            setState(m_asked ? "failed" : "unchecked", QString::fromUtf8(error).trimmed());
             return;
         }
         bool enabled = false;
@@ -105,6 +105,7 @@ void PluginSetup::readList() {
 void PluginSetup::accept() {
     if (m_state != "offer")
         return;
+    m_asked = true;
     setState("checking");
     run(m_paths.omarchy, {"plugin", "enable", kPluginId}, [this](bool ok, const QByteArray &, const QByteArray &error) {
         if (ok)
@@ -151,7 +152,9 @@ void PluginSetup::replaceLegacy() {
 }
 
 void PluginSetup::decline() {
-    if (m_state != "offer")
+    // "blocked" too: someone else's folder or link at the path is there for
+    // good, and its notice would otherwise show at every start.
+    if (m_state != "offer" && m_state != "blocked")
         return;
     if (!m_paths.declined.isEmpty() && QDir().mkpath(QFileInfo(m_paths.declined).absolutePath())) {
         QFile mark(m_paths.declined);

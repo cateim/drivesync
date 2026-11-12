@@ -20,10 +20,17 @@ Panel {
   readonly property var status: sync.status
   readonly property string syncState: Model.barState(status)
   readonly property bool canSync: Model.canSyncNow(status) && !sync.starting
-  // The two causes the app names get a sentence; any other error shows its log line.
-  readonly property string causeText: status.causeKind === "lostListings" ? strings.t("cause.lostListings")
-                                    : status.causeKind === "outOfSync" ? strings.t("cause.outOfSync")
-                                    : status.causeDetail
+  // Every cause the app names gets a sentence, as in the window; any other
+  // error shows its log line, and the line is never blank.
+  readonly property string causeText: {
+    switch (status.causeKind) {
+      case "lostListings": return strings.t("cause.lostListings")
+      case "outOfSync": return strings.t("cause.outOfSync")
+      case "timeout": return strings.t("cause.timeout")
+      case "systemd": return strings.t("cause.systemd").arg(status.causeDetail)
+    }
+    return status.causeDetail !== "" ? status.causeDetail : strings.t("cause.unknown")
+  }
 
   readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
   readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent

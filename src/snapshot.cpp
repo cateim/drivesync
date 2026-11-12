@@ -91,8 +91,10 @@ Snapshot buildSnapshot(const SnapshotSources &src) {
         s.lastRunEnd = lastFinished->end;
         s.lastRunOutcome = lastFinishedOutcome;
     }
+    // No failure in the log after its last success means only systemd saw
+    // one: it began with the service's last start, not with that good run.
     if (s.summary.status == "failed")
-        s.failingSince = failingSince;
+        s.failingSince = failingSince.isValid() ? failingSince : in.serviceStart;
     return s;
 }
 
@@ -132,14 +134,16 @@ QJsonObject snapshotToJson(const Snapshot &s, const QDateTime &nextRun, const QD
 
 QString toneFor(const QString &status) {
     static const QStringList errors{"failed", "timerOff", "unavailable", "notLoaded", "noLog", "noDrive"};
-    static const QStringList warnings{"interrupted", "skipped", "paused", "stale", "conflicts"};
+    static const QStringList warnings{"interrupted", "skipped", "paused", "stale", "noRuns", "conflicts"};
     if (errors.contains(status))
         return "error";
     if (warnings.contains(status))
         return "warning";
     if (status == "running" || status == "resync")
         return "busy";
-    return "ok";
+    // Only "ok" is fine: a status added without a tone shows up as an error
+    // instead of a green cloud.
+    return status == "ok" ? "ok" : "error";
 }
 
 QStringList systemdShowArguments() {

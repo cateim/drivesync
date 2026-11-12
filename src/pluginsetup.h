@@ -30,7 +30,8 @@ inline constexpr char kLegacyPluginId[] = "syncwatch";
 class PluginSetup : public QObject {
     Q_OBJECT
     // "checking" | "noOmarchy" | "notShipped" | "blocked" | "offer"
-    // | "enabled" | "declined" | "failed"
+    // | "enabled" | "declined" | "failed" | "unchecked" (omarchy could not
+    // list its plugins before the user asked for anything: no banner)
     Q_PROPERTY(QString state READ state NOTIFY changed)
     Q_PROPERTY(QString detail READ detail NOTIFY changed)
 
@@ -46,7 +47,8 @@ public:
     Q_INVOKABLE void check();
     // Puts the widget on the bar. Only does something after check() offered it.
     Q_INVOKABLE void accept();
-    // Remembers "no": later starts neither offer nor link the widget, so an
+    // Remembers "no", to the offer or to the notice that the path is taken:
+    // later starts neither offer nor link the widget, so an
     // `omarchy plugin remove drivesync` stays removed.
     Q_INVOKABLE void decline();
 
@@ -65,4 +67,5 @@ private:
     QString m_state = "checking";
     QString m_detail;
     bool m_legacyTried = false;
+    bool m_asked = false;  // B or the button: only then is a failure worth a banner
 };

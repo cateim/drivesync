@@ -11,6 +11,8 @@ Rectangle {
     // Not "state": every Item already has one.
     readonly property string setupState: pluginSetup.state
     readonly property bool offering: setupState === "offer"
+    // N hides the notice that the path is taken, too, for good.
+    readonly property bool dismissable: offering || setupState === "blocked"
     readonly property color accent: theme.accent
 
     visible: offering || setupState === "blocked" || setupState === "failed"
@@ -66,14 +68,14 @@ Rectangle {
             font.pixelSize: 12
         }
         Button {
-            visible: banner.offering
-            text: qsTr("No, thanks")
+            visible: banner.dismissable
+            text: banner.offering ? qsTr("No, thanks") : qsTr("Don't show again")
             flat: true
             focusPolicy: Qt.NoFocus
             onClicked: pluginSetup.decline()
         }
         Label {
-            visible: banner.offering
+            visible: banner.dismissable
             text: "N"
             textFormat: Text.PlainText
             color: "#6f6f7a"

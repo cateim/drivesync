@@ -12,7 +12,7 @@ const model = {}
 vm.runInNewContext(source.replace(/^\.pragma library\s*$/m, ""), model)
 
 const STATUSES = ["ok", "running", "resync", "paused", "failed", "interrupted", "skipped", "timerOff",
-                  "stale", "noDrive", "noLog", "notLoaded", "unavailable", "conflicts"]
+                  "stale", "noDrive", "noRuns", "noLog", "notLoaded", "unavailable", "conflicts"]
 
 // What `drivesync status --json` prints with drive-sync in sync (contract version 2).
 const HEALTHY = {
@@ -82,12 +82,12 @@ test("causeDetail keeps markup inert on one bounded line", () => {
 test("barState maps every status", () => {
   const expected = {
     ok: "ok", running: "syncing", resync: "resync", paused: "paused", failed: "failing",
-    interrupted: "warning", skipped: "warning", stale: "warning", conflicts: "warning",
+    interrupted: "warning", skipped: "warning", stale: "warning", noRuns: "warning", conflicts: "warning",
     timerOff: "timerOff", noDrive: "broken", noLog: "broken", notLoaded: "broken", unavailable: "broken"
   }
   const tones = {
     ok: "ok", running: "busy", resync: "busy", paused: "warning", failed: "error", interrupted: "warning",
-    skipped: "warning", stale: "warning", conflicts: "warning", timerOff: "error",
+    skipped: "warning", stale: "warning", noRuns: "warning", conflicts: "warning", timerOff: "error",
     noDrive: "error", noLog: "error", notLoaded: "error", unavailable: "error"
   }
   for (const status of STATUSES) {
@@ -274,4 +274,21 @@ test("warnings get the window's orange on the bar and in the panel", () => {
   assert.match(window, new RegExp(`"warning" \\? "${orange[1]}"`))
   assert.match(qml, /activeColor: root\.stateColor/)
   assert.match(qml, /color: root\.stateColor/)
+})
+
+test("the failing line has a sentence for every cause the app names", () => {
+  const qml = readFileSync(new URL("../DriveSync.qml", import.meta.url), "utf8")
+  for (const kind of ["lostListings", "outOfSync", "timeout", "systemd"])
+    assert.match(qml, new RegExp(`case "${kind}": return strings\\.t\\("cause\\.${kind}"\\)`), kind)
+  // An "error" with no line, or a kind this widget does not know, still says something.
+  assert.match(qml, /status\.causeDetail !== "" \? status\.causeDetail : strings\.t\("cause\.unknown"\)/)
+})
+
+test("every status the app prints has a headline in both catalogs", () => {
+  // The headline key is built at run time ("status." + status), so the
+  // literal-key test above cannot see a missing one.
+  for (const lang of ["en", "pt-BR"]) {
+    const catalog = JSON.parse(readFileSync(new URL(`../i18n/${lang}.json`, import.meta.url), "utf8"))
+    for (const status of STATUSES) assert.ok(`status.${status}` in catalog, `${lang}: status.${status}`)
+  }
 })
