@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix a broken sync from DriveSync (`F` in the window, `drivesync fix`): after lost listings, listings out of sync or edited filters, it rebuilds the base of both sides with `~/Drive` still in use, as `drive-sync.sh resync` did, in its own unit (`drive-sync-fix.service`), so closing the window or logging out does not stop it halfway. A dry run lists the copies first, each with its direction and the ones to the notebook on top (where a file deleted there would come back), and nothing changes until it is confirmed; files that changed on the notebook during the base run are kept, and files that changed in the cloud, or appeared only there, are asked about one by one (`C` keeps the cloud's, `L` the notebook's, sending a cloud-only file to the Drive trash). Timer ticks, `S` and the bar's sync wait until the fix ends; a fix that waits for an answer or stops sends a card at once and every hour after. The fix is refused where the config's `runOnlyWhen` says no (the emergency home) and after `--max-delete` stopped a run, since a resync would bring the deleted files back; once the base ran, `X` asks twice before throwing it away.
 - The fix's dry run and base run pass `--max-lock 2m`, so a base run killed halfway leaves a lock that expires 2 minutes later, and the retry waits it out (the final normal run keeps the config's own, 2m after a takeover). The old script's base run had no `--max-lock`, and a killed one blocked every later run for good.
 - The status JSON and the bar know three new statuses, still in version 2: `fixing` (with `resync` true, so the bar shows the resync icon), `fixWaiting` and `fixFailed`.
-- After `--max-delete` stopped a run, DriveSync shows what that run would delete instead of a fix (`D` in the window with the first 500, `drivesync deletes --list` with all of them): split by side, the ones gone from the cloud (deleted on the notebook, for good) first, the others going to the Drive trash. Typing the number of files in the list lets one run through (`drivesync deletes --allow <count>`) with the guard raised just enough for them, never `--force`; that run first checks with a dry run that it would delete only files in the confirmed list, and otherwise keeps the usual guard and stops again with the new list. The confirmation serves one run, only while the stopped run is still the last one, and expires after 30 minutes. The headline counts the files, and the card (still critical) and the bar say to press `D`. A stop of tens of thousands of deletions is read whole, past the 3 MB of log the status reads.
+- After `--max-delete` stopped a run, DriveSync shows what that run would delete instead of a fix (`D` in the window with the first 500, `drivesync deletes --list` with all of them): split by side, the ones gone from the cloud (deleted on the notebook, for good) first, the others going to the Drive trash. Typing the number of files in the list lets one run through (`drivesync deletes --allow <count>`) with the guard raised just enough for them, never `--force`; that run first checks with a dry run that it would delete only files in the confirmed list, and otherwise keeps the usual guard and stops again with the new list. The confirmation serves one run, only while the stopped run is still the last one, and expires after 30 minutes. The headline counts the files, and the card (still critical) and the bar say to press `D`. A stop of tens of thousands of deletions is read whole, past the 3 MB of log the status reads. Filters edited after a stop no longer bring `F` back: the window and the card say to undo the edit first, so the next run shows the list.
 
 ### 🔧 Changed
 
@@ -51,5 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The failing line in the bar panel has a sentence for a run stopped at its time limit and for a failure only systemd reports, and is never blank.
 - When `omarchy plugin list` fails as the window opens, the window no longer says it could not put DriveSync on the bar: nobody asked yet. After `B` it still does.
 - `N` also hides the notice that someone else's folder or link holds the widget's place, which came back at every start.
+
+## Legend
+
+| Type          | Meaning                                 |
+| ------------- | --------------------------------------- |
+| ✨ Added      | new features                            |
+| 🔧 Changed    | changes in existing functionality       |
+| ⚠️ Deprecated | features that will be removed soon      |
+| 🗑️ Removed    | features removed in this release        |
+| 🐛 Fixed      | bug fixes                               |
+| 🔐 Security   | vulnerabilities addressed and hardening |
 
 [Unreleased]: https://github.com/CaTeIM/drivesync/commits/master

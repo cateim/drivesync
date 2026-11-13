@@ -518,6 +518,10 @@ void Backend::updateFix(const FixState &fix) {
 }
 
 void Backend::updateBlocked(const QString &logText) {
+    if (const bool holds = ::guardStopHolds(m_parsed); holds != m_guardStopHolds) {
+        m_guardStopHolds = holds;
+        emit blockedChanged();
+    }
     const bool guardStop = !m_parsed.isEmpty() && m_parsed.last().outcome == "failed"
                            && m_parsed.last().causeKind == "maxDelete";
     // A stopped run never changes: read its list once.

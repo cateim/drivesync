@@ -318,8 +318,8 @@ esac
     return path;
 }
 
-// An rclone for the fix that records each call in calls.log. A dry run logs
-// two copies; a base run copies the listings in dir/canned to the work dir
+// An rclone for the fix that records each call in calls.log. A resync dry
+// run logs two copies, a normal dry run the lines in dir/normal-dry; a base run copies the listings in dir/canned to the work dir
 // and writes the filters' .md5, as --resync does. lock-once makes the next
 // base run fail on a lock; base-fails and normal-fails make those runs
 // fail; deletefile exits with deletefile-exit, or 0.
@@ -338,7 +338,10 @@ for a in "$@"; do
 done
 case " $* " in
   *" --dry-run "*)
-    printf '2026/11/11 12:00:01 NOTICE: a.txt: Skipped copy as --dry-run is set (size 3)\n2026/11/11 12:00:01 NOTICE: b c.txt: Skipped copy as --dry-run is set (size 4)\n' >> "$log"
+    case " $* " in
+      *" --resync "*) printf '2026/11/11 12:00:01 NOTICE: a.txt: Skipped copy as --dry-run is set (size 3)\n2026/11/11 12:00:01 NOTICE: b c.txt: Skipped copy as --dry-run is set (size 4)\n' >> "$log" ;;
+      *) cat '%1/normal-dry' >> "$log" 2>/dev/null ;;
+    esac
     exit 0 ;;
   *" --resync "*)
     if [ -f '%1/lock-once' ]; then
@@ -4830,8 +4833,130 @@ private slots:
                         .arg(s.config.filtersFile, kFiltersChangedReason));
         QVERIFY(write(s.config.logFile, log.toUtf8()));
         QCOMPARE(SyncLog::parse(log).last().causeKind, QString("filtersChanged"));
-        QVERIFY(fixCommand(s, {"--start"}).contains("too many"));
+        const QString refusal = fixCommand(s, {"--start"});
+        QVERIFY(refusal.contains("too many"));
+        // What to do about it: the edit goes first, then the list shows.
+        QVERIFY2(refusal.contains("undo the filters edit first"), qPrintable(refusal));
         QVERIFY(!fixPresent(s.paths.appState));
+    }
+
+    void guardStopHoldsLooksPastRefusals()
+    {
+        const QDateTime start(QDate(2026, 11, 12), QTime(18, 41, 19));
+        const QString aborted = abortedRun(start, {}, numberedFiles("f%1.txt", 11), 21);
+        const QString refused = line(start.addSecs(900), "CRITICAL",
+                                     QString("DriveSync did not start rclone: filters.txt changed since the last resync, %1")
+                                         .arg(kFiltersChangedReason));
+        QVERIFY(guardStopHolds(SyncLog::parse(aborted)));
+        QVERIFY(guardStopHolds(SyncLog::parse(aborted + refused)));
+        QVERIFY(guardStopHolds(SyncLog::parse(aborted + refused + refused)));
+        QVERIFY(!guardStopHolds(SyncLog::parse(aborted + successfulRun(start.addSecs(900), 480))));
+        QVERIFY(!guardStopHolds(SyncLog::parse(successfulRun(start, 480) + refused)));
+        QVERIFY(!guardStopHolds({}));
+    }
+
+    void notifyNamesTheGuardBehindEditedFilters()
+    {
+        // Edited filters after a guard stop: F would bring the deleted files
+        // back, so the card must not say "press F".
+        QTemporaryDir dir;
+        const BackendPaths paths = controlPaths(dir.path(), true);
+        const QDateTime start = QDateTime::currentDateTime().addSecs(-900);
+        QVERIFY(write(paths.log, (abortedRun(start, {}, numberedFiles("f%1.txt", 11), 21)
+                                  + line(QDateTime::currentDateTime().addSecs(-30), "CRITICAL",
+                                         QString("DriveSync did not start rclone: filters.txt changed since the last "
+                                                 "resync, %1")
+                                             .arg(kFiltersChangedReason)))
+                                     .toUtf8()));
+        QCOMPARE(runNotifyCommand("exit-code", paths, fakeNotifier(dir.path()), QDateTime::currentDateTimeUtc()), 0);
+        const QStringList sent = notifications(dir.path());
+        QCOMPARE(sent.size(), 1);
+        QVERIFY2(sent.at(0).contains("Undo the filters edit first"), qPrintable(sent.at(0)));
+        QVERIFY(!sent.at(0).contains("press F"));
+    }
+
+    void backendSeesTheGuardBehindARefusal()
+    {
+        QTemporaryDir dir;
+        const QDateTime start = QDateTime::currentDateTime().addSecs(-900);
+        QDir(dir.path()).mkpath("Drive");
+        const QString refused = line(QDateTime::currentDateTime().addSecs(-30), "CRITICAL",
+                                     QString("DriveSync did not start rclone: filters.txt changed since the last "
+                                             "resync, %1")
+                                         .arg(kFiltersChangedReason));
+        QVERIFY(write(dir.filePath("drive-sync.log"),
+                      (abortedRun(start, {}, numberedFiles("f%1.txt", 11), 21) + refused).toUtf8()));
+        BackendPaths paths{dir.filePath("drive-sync.log"), dir.filePath("Drive"), dir.filePath("state"),
+                           dir.filePath("proc"), fakeSystemctl(dir.path(), start),
+                           QStandardPaths::findExecutable("find"), dir.filePath("app")};
+        paths.managed = true;
+        Backend backend(paths);
+        QTRY_COMPARE(backend.status(), QString("failed"));
+        QCOMPARE(backend.causeKind(), QString("filtersChanged"));
+        QVERIFY(backend.guardStopHolds());
+        QCOMPARE(backend.blockedCount(), 0);  // the newest record is the refusal
+
+        // Edited filters with no stop before them: the usual F.
+        QVERIFY(write(dir.filePath("drive-sync.log"), (successfulRun(start, 480) + refused).toUtf8()));
+        QTRY_VERIFY(!backend.guardStopHolds());
+        QCOMPARE(backend.causeKind(), QString("filtersChanged"));
+    }
+
+    void fixFinalRunTakesTheConfirmation()
+    {
+        // A fix whose final run stopped at the guard: D sends it back to that
+        // run, which dry-runs with the raised guard, as drivesync run does.
+        const auto setUp = [](const QString &dir, FixSetup *s) {
+            *s = makeFixSetup(dir);
+            QVERIFY(write(s->config.filtersFile + ".md5",
+                          QCryptographicHash::hash(readBytes(s->config.filtersFile), QCryptographicHash::Md5).toHex()));
+            QVERIFY(baseListings(*s));
+            const QDateTime start = QDateTime::currentDateTime().addSecs(-300);
+            QVERIFY(write(s->config.logFile, (successfulRun(start.addSecs(-1800), 480)
+                                              + abortedRun(start, {}, numberedFiles("f%1.txt", 11), 21))
+                                                 .toUtf8()));
+            FixState failed = fixAt("failed");
+            failed.failedStep = "finishing";
+            failed.error = R"(Safety abort: too many deletes (>5%, 11 of 21) on Path2 "/home/someone/Drive/". Run with --force if desired.)";
+            QVERIFY(writeFix(s->paths.appState, failed));
+            QCOMPARE(deletesCommand(s->paths, {"--allow", "11"}).value("ok").toBool(), true);
+            QCOMPARE(readFix(s->paths.appState).step, QString("finishing"));
+        };
+        const auto dryRun = [](const QStringList &files) {
+            const QDateTime t = QDateTime::currentDateTime();
+            QString log = line(t, "INFO", R"(Synching Path1 "gdrive{x}:/" with Path2 "/home/someone/Drive/")");
+            for (const QString &f : files)
+                log += line(t, "NOTICE", change("Path2", "File was deleted", f));
+            return (log + line(t, "INFO", "Bisync successful")).toUtf8();
+        };
+        const auto normalRun = [](const QString &dir) {
+            const QStringList bisync = calls(dir).filter(QRegularExpression("^rclone bisync "));
+            for (auto it = bisync.crbegin(); it != bisync.crend(); ++it)
+                if (!it->contains("--dry-run"))
+                    return *it;
+            return QString();
+        };
+        {
+            QTemporaryDir dir;
+            FixSetup s;
+            setUp(dir.path(), &s);
+            QVERIFY(write(dir.filePath("normal-dry"), dryRun(numberedFiles("f%1.txt", 11))));
+            QCOMPARE(runFixUnit(s.paths, s.config, s.tools, s.notify), 0);
+            QVERIFY(!fixPresent(s.paths.appState));
+            QVERIFY(!QFile::exists(allowDeletesPath(s.paths.appState)));
+            QVERIFY2(normalRun(dir.path()).contains("--max-delete 53"), qPrintable(normalRun(dir.path())));
+            QVERIFY(readBytes(s.config.logFile).contains("raised --max-delete to 53%"));
+        }
+        {
+            // One file deleted since the confirmation: the usual guard.
+            QTemporaryDir dir;
+            FixSetup s;
+            setUp(dir.path(), &s);
+            QVERIFY(write(dir.filePath("normal-dry"), dryRun(numberedFiles("f%1.txt", 12))));
+            QCOMPARE(runFixUnit(s.paths, s.config, s.tools, s.notify), 0);
+            QVERIFY2(normalRun(dir.path()).contains("--max-delete 5 "), qPrintable(normalRun(dir.path())));
+            QVERIFY(readBytes(s.config.logFile).contains("not in the list that was confirmed"));
+        }
     }
 };
 

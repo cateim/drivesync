@@ -7,6 +7,8 @@
 #include <QTextStream>
 #include <optional>
 
+#include "synclog.h"
+
 struct BackendPaths;  // backend.h, which includes this header
 
 // When --max-delete stops a run (spec section 5b), the run deleted nothing
@@ -32,6 +34,13 @@ struct BlockedDeletes {
 // Path1" line on), whatever it ended with, at any level: a dry run writes
 // them as NOTICE. Fills count, cloudCount, notebookCount and list.
 BlockedDeletes deletionsInNewestRun(const QString &logText, int limit);
+
+// The newest run that reached bisync stopped at the max-delete guard. Runs
+// under way and records that never reached bisync (DriveSync's refusals,
+// rclone that did not start: no phase) are looked past, so edited filters
+// after a stop do not open the way to a fix that would bring the deleted
+// files back (spec 5b).
+bool guardStopHolds(const QList<SyncRun> &runs);
 
 // The newest run in the log text, when it stopped at the max-delete guard.
 // A run after it, even one DriveSync refused or one under way, holds nothing

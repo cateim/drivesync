@@ -15,7 +15,9 @@ Rectangle {
     readonly property bool needsBase: backend.status === "failed"
         && ["lostListings", "outOfSync", "filtersChanged"].indexOf(backend.causeKind) >= 0
 
-    visible: needsBase && backend.managed && backend.fixStep === ""
+    // After a guard stop a fix would bring the deleted files back (spec 5b),
+    // even when edited filters made the runs after it refuse.
+    visible: needsBase && backend.managed && backend.fixStep === "" && !backend.guardStopHolds
     Material.roundedScale: theme.radius
     color: "#16161a"
     radius: theme.radius

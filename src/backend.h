@@ -75,6 +75,9 @@ class Backend : public QObject {
     Q_PROPERTY(int blockedCloudCount READ blockedCloudCount NOTIFY blockedChanged)
     Q_PROPERTY(int blockedNotebookCount READ blockedNotebookCount NOTIFY blockedChanged)
     Q_PROPERTY(QVariantList blockedList READ blockedList NOTIFY blockedChanged)
+    // The newest run that reached bisync stopped at the guard, even with
+    // refused runs after it (edited filters): F would bring the files back.
+    Q_PROPERTY(bool guardStopHolds READ guardStopHolds NOTIFY blockedChanged)
     Q_PROPERTY(QString logPath READ logPath CONSTANT)
     Q_PROPERTY(QString drivePath READ drivePath CONSTANT)
 
@@ -114,6 +117,7 @@ public:
     int blockedCloudCount() const { return m_blocked.cloudCount; }
     int blockedNotebookCount() const { return m_blocked.notebookCount; }
     QVariantList blockedList() const { return m_blockedList; }
+    bool guardStopHolds() const { return m_guardStopHolds; }
     QString logPath() const { return m_paths.log; }
     QString drivePath() const { return m_paths.drive; }
 
@@ -213,4 +217,5 @@ private:
     int m_fixCopiesToNotebook = 0;
     BlockedDeletes m_blocked;
     QVariantList m_blockedList;
+    bool m_guardStopHolds = false;
 };

@@ -84,7 +84,9 @@ Rectangle {
         case "outOfSync": return backend.managed
             ? qsTr("The listings of the two sides don't match, so bisync dropped its base. Press F to fix it.")
             : qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: drive-sync.sh resync")
-        case "filtersChanged": return qsTr("The filters changed since the last base, so every run waits. Press F to rebuild the base with them.")
+        case "filtersChanged": return backend.guardStopHolds
+            ? qsTr("The filters changed after a run stopped at the max-delete guard, and a fix would bring those files back. Undo the filters edit first: the next run shows the deletions under D.")
+            : qsTr("The filters changed since the last base, so every run waits. Press F to rebuild the base with them.")
         // DriveSync lists the deletions and lets one run through (D); the
         // old scripts leave it to rclone by hand.
         case "maxDelete": return backend.managed && backend.blockedCount > 0

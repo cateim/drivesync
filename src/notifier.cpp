@@ -147,13 +147,18 @@ QString cause(const QString &serviceResult, const BackendPaths &paths, QString *
     const QDateTime started = fromUnixStamp(QString::fromUtf8(stamp).trimmed());
     bool truncated = false;
     const QString text = SyncLog::readRecent(paths.log, 256 * 1024, nullptr, &truncated);
-    const QList<SyncRun> runs = SyncLog::parse(text, 5, truncated);
+    // Every record, so a stop behind many refused ticks is still seen.
+    const QList<SyncRun> runs = SyncLog::parse(text, kStateRuns, truncated);
     // The log keeps whole seconds; systemd's start can be up to a second later.
     if (!runs.isEmpty() && (!started.isValid() || runs.last().start >= started.addSecs(-2))
         && runs.last().outcome == "failed") {
         *kind = runs.last().causeKind;
         // Spec 5b: the guard stopped it before anything was deleted. Every
         // deletion counts, both sides, as the window lists them.
+        if (*kind == "filtersChanged" && guardStopHolds(runs))
+            return tr("The filters changed after a run stopped at the max-delete guard, and a fix would bring those "
+                      "files back. Undo the filters edit first: the next run shows the deletions under D.")
+                .left(200);
         if (*kind == "maxDelete")
             if (const auto blocked = blockedDeletes(text, 0))
                 return tr("A run would delete %Ln files, more than the guard allows, so it stopped and deleted "

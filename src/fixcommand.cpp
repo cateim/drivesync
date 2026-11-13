@@ -180,19 +180,18 @@ QString runOnlyWhenRefusal(const SyncConfig &config) {
 QString maxDeleteRefusal(const SyncConfig &config) {
     bool truncated = false;
     const QString text = SyncLog::readRecent(config.logFile, kTailBytes, nullptr, &truncated);
-    const QList<SyncRun> runs = SyncLog::parse(text, 5, truncated);
-    for (auto it = runs.crbegin(); it != runs.crend(); ++it) {
-        // An open run says nothing yet, and a record with no phase never
-        // reached bisync (DriveSync's own refusal, rclone that did not
-        // start): neither lifts the stop before it.
-        if (it->outcome == "open" || it->phase.isEmpty())
-            continue;
-        if (it->causeKind == "maxDelete")
-            return "the last run stopped because it would delete too many files (--max-delete); a fix would bring "
-                   "them back, so it is refused";
-        break;
-    }
-    return QString();
+    // Every record: a refusal per tick would push a short list past the stop.
+    const QList<SyncRun> runs = SyncLog::parse(text, kStateRuns, truncated);
+    if (!guardStopHolds(runs))
+        return QString();
+    // Edited filters after the stop: runs are refused before rclone, so the
+    // list cannot show until the edit is undone.
+    if (runs.last().causeKind == "filtersChanged")
+        return "the last run that reached bisync stopped because it would delete too many files (--max-delete), and "
+               "a fix would bring them back; undo the filters edit first: the next run then shows the deletions "
+               "under D";
+    return "the last run stopped because it would delete too many files (--max-delete); a fix would bring "
+           "them back, so it is refused";
 }
 
 QString startFix(const BackendPaths &paths) {

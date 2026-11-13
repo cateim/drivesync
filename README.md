@@ -174,7 +174,8 @@ run away, and every run fails until another fix.
 
 No fix is offered where the config's `runOnlyWhen` says no (another home
 mounted), nor after `--max-delete` stopped a run: a resync would bring the
-deleted files back.
+deleted files back. That holds when the filters were edited after the stop
+too: undo the edit first, so the next run shows the deletions under `D`.
 
 ## When too many files would be deleted
 

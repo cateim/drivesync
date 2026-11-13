@@ -163,9 +163,10 @@ ApplicationWindow {
         sequence: "F"
         context: Qt.ApplicationShortcut
         // After --max-delete stopped a run, a fix would bring the deleted
-        // files back (spec 5b): no F until a run passes.
+        // files back (spec 5b): no F until a run passes, even when refused
+        // runs (edited filters) came after the stop.
         enabled: !win.dialogOpen && backend.managed && backend.status !== "fixing"
-                 && !(backend.status === "failed" && backend.causeKind === "maxDelete")
+                 && !(backend.status === "failed" && backend.guardStopHolds)
         onActivated: win.openFix()
     }
     Shortcut {

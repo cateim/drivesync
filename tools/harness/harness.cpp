@@ -7,7 +7,8 @@
 //   bin/harness --out build/shot.png [options]   (build/shot.png by default)
 //   --lang en|pt-BR                      the Omarchy language
 //   --scenario ok|running|failed|clean|empty|maxdelete   clean: no conflict copies; empty: no run in the log;
-//                                        maxdelete: the last run stopped at the guard, 2 + 1800 deletions
+//                                        maxdelete: the last run stopped at the guard, 2 + 1800 deletions;
+//                                        guardfilters: that stop, then a run refused for edited filters
 //   --clock "<Qt format>"                the bar clock; without it, the system locale's hours
 //   --pause none|hour|forever|ended      a pause mark; --managed: DriveSync's own units
 //   --takeover none|offer|running|blocked|failed
@@ -104,7 +105,7 @@ int main(int argc, char **argv) {
         log += L(now.addSecs(-10), "INFO", "");
         log += "Transferred:   \t 0 B / 0 B, -, 0 B/s, ETA -\nChecks:  41000 / 41000, 100%, Listed 41210\nElapsed time:  4m0.0s\n\n";
         active = "activating";
-    } else if (scenario == "maxdelete") {
+    } else if (scenario == "maxdelete" || scenario == "guardfilters") {
         // What rclone 1.75.2 writes when --max-delete stops a run: each
         // deletion, both sides, then the abort for the side over the guard.
         const QDateTime s = now.addSecs(-200);
@@ -120,6 +121,9 @@ int main(int argc, char **argv) {
         log += L(s, "ERROR", R"(Safety abort: too many deletes (>5%, 1800 of 33411) on Path2 "/home/someone/Drive/". Run with --force if desired.)");
         log += L(s, "NOTICE", "Bisync aborted. Please try again.");
         log += L(s, "NOTICE", "Failed to bisync: too many deletes");
+        if (scenario == "guardfilters")
+            log += L(now.addSecs(-60), "CRITICAL", "DriveSync did not start rclone: /home/someone/.config/drivesync/filters.txt "
+                                                   "changed since the last resync, so bisync would lose its base");
     }
     if (scenario == "empty")
         log.clear();  // a new or just rotated log

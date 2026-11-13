@@ -85,6 +85,15 @@ BlockedDeletes deletionsInNewestRun(const QString &logText, int limit) {
     return result;
 }
 
+bool guardStopHolds(const QList<SyncRun> &runs) {
+    for (auto it = runs.crbegin(); it != runs.crend(); ++it) {
+        if (it->outcome == "open" || it->phase.isEmpty())
+            continue;
+        return it->outcome == "failed" && it->causeKind == "maxDelete";
+    }
+    return false;
+}
+
 std::optional<BlockedDeletes> blockedDeletes(const QString &logText, int limit) {
     const qsizetype start = newestRunStart(logText);
     if (start < 0)

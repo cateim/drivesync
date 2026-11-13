@@ -96,7 +96,7 @@ assets/images/          README pictures: window-*.png from bin/harness over a ma
 
 ```sh
 bin/build            # about 30 s from clean
-bin/test             # 193 cases, about 14 s (four run real rclone on temp folders)
+bin/test             # 197 cases, about 14 s (four run real rclone on temp folders)
 bin/install          # needs sudo (pacman -U); run it in a real terminal
 bin/harness --scenario running --clock "h:mm AP" --out build/shot.png   # the window offscreen, made-up data; options atop tools/harness/harness.cpp
 makepkg -f           # from pkgbuild/, with BUILDDIR and PKGDEST set as in bin/install, to check packaging without sudo
@@ -174,8 +174,10 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
   raised guard only when the dry run ends well and every deletion it finds,
   by side and path, is in that run's list. Otherwise the config's own guard
   stops it again with the new list. A mark older than 30 minutes is dropped.
-  Never `--force`. `maxDeleteRefusal` (the fix) looks past records with no
-  phase, which never reached bisync (a refusal), to the stop before them.
+  Never `--force`. `guardStopHolds` looks past open runs and records with no
+  phase, which never reached bisync (a refusal), to the stop before them:
+  the fix's refusal, the card, the headline, `FixBanner` and `F` use it, so
+  filters edited after a stop say "undo the edit first", never "press F".
 - Every reader of the log uses `SyncLog::readRecent`: the tail, extended back
   (at most 64 MB) until it holds a "Synching Path1" line, because a stop of
   tens of thousands of deletions writes more than the 3 MB tail, and its

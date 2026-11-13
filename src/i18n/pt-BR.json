@@ -1,4 +1,5 @@
 {
+  "The filters changed after a run stopped at the max-delete guard, and a fix would bring those files back. Undo the filters edit first: the next run shows the deletions under D.": "Os filtros mudaram depois que uma rodada foi barrada pelo max-delete, e um conserto traria esses arquivos de volta. Desfaça antes a edição dos filtros: a próxima rodada mostra a lista no D.",
   "All of them: drivesync deletes --list": "Todos: drivesync deletes --list",
   "D lists what the run would delete, and lets one run through after you type how many files that is.": "D lista o que a rodada apagaria e deixa uma rodada passar depois que você digita quantos arquivos são.",
   "Review…": "Revisar…",
