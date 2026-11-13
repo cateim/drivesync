@@ -10,6 +10,7 @@
 #include <QStandardPaths>
 #include <QTimeZone>
 
+#include "blockeddeletes.h"
 #include "clockformat.h"
 #include "controlcommands.h"
 #include "pausestate.h"
@@ -23,6 +24,7 @@ constexpr int kRepeatSeconds = 3600;
 constexpr int kPauseReminderSeconds = 86400;
 
 QString tr(const char *text) { return QCoreApplication::translate("Notifier", text); }
+QString tr(const char *text, int n) { return QCoreApplication::translate("Notifier", text, nullptr, n); }
 
 // One open problem: when it began, when it was last shown, and the card's id.
 struct Problem {
@@ -144,12 +146,20 @@ QString cause(const QString &serviceResult, const BackendPaths &paths, QString *
                kToolTimeoutMs, &stamp, nullptr);
     const QDateTime started = fromUnixStamp(QString::fromUtf8(stamp).trimmed());
     bool truncated = false;
-    const QString text = SyncLog::readTail(paths.log, 256 * 1024, nullptr, &truncated);
+    const QString text = SyncLog::readRecent(paths.log, 256 * 1024, nullptr, &truncated);
     const QList<SyncRun> runs = SyncLog::parse(text, 5, truncated);
     // The log keeps whole seconds; systemd's start can be up to a second later.
     if (!runs.isEmpty() && (!started.isValid() || runs.last().start >= started.addSecs(-2))
         && runs.last().outcome == "failed") {
         *kind = runs.last().causeKind;
+        // Spec 5b: the guard stopped it before anything was deleted. Every
+        // deletion counts, both sides, as the window lists them.
+        if (*kind == "maxDelete")
+            if (const auto blocked = blockedDeletes(text, 0))
+                return tr("A run would delete %Ln files, more than the guard allows, so it stopped and deleted "
+                          "nothing. Open DriveSync and press D to review them.",
+                          blocked->count)
+                    .left(200);
         const QString sentence = causeSentence(runs.last().causeKind, runs.last().causeDetail);
         if (!sentence.isEmpty())
             return sentence.left(200);

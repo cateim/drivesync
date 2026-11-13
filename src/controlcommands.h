@@ -4,7 +4,10 @@
 #include <QStringList>
 #include <QTextStream>
 
+#include <optional>
+
 #include "backend.h"
+#include "blockeddeletes.h"
 #include "syncconfig.h"
 
 // The commands that change drive-sync, for the window, the bar widget and
@@ -45,8 +48,26 @@ int runResumeCommand(const QStringList &arguments, const BackendPaths &paths, QT
 int runConditionCommand(const BackendPaths &paths, const SyncConfig &config, const QDateTime &now);
 
 // What "drivesync run" hands to rclone, or nothing with a refusal when the
-// filters check fails (see filtersUsable).
-QStringList runCommandPlan(const SyncConfig &config, QString *refusal);
+// filters check fails (see filtersUsable). With a confirmation of blocked
+// deletions, --max-delete is raised just enough for them.
+QStringList runCommandPlan(const SyncConfig &config, QString *refusal, const std::optional<AllowDeletes> &allow = {});
+
+// The plan for the run that starts now: runCommandPlan, or, when the user
+// confirmed blocked deletions (the mark, taken here so it serves one run),
+// first a --dry-run with the raised guard into
+// <appState>/allowed-dry-run.log. The raised guard goes to the real run only
+// when that dry run ends well and deletes no more on either side than was
+// confirmed: one --max-delete covers both sides, in whole percents. Else the
+// config's own guard stops the run again and the log shows the list as it
+// is now. *note gets the line for the log, empty when there was no mark.
+QStringList runPlanTakingMark(const SyncConfig &config, const QString &appState, const QString &rclone,
+                              const QDateTime &now, QString *refusal, QString *note);
+// "DriveSync raised --max-delete to 53% for this run: 11 deletions confirmed".
+QString allowedRunLogLine(const AllowDeletes &allow, int percent);
+// One line in rclone's format ("2026/11/12 18:41:19 INFO  : message", local time).
+void appendToLog(const QString &logFile, const QString &level, const QString &message);
+// systemctl --user start --no-block drive-sync.service; systemctl's error, or empty.
+QString startOneRun(const BackendPaths &paths);
 
 // "drivesync run", the ExecStart of drive-sync.service. On success it never
 // returns: rclone replaces the process, so systemd sees rclone's exit code

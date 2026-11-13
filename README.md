@@ -66,6 +66,7 @@ the `drive-sync` user timers.
 | `T`              | Let DriveSync run drive-sync, when offered                      |
 | `F`, `X`         | Fix a broken sync, or cancel the fix in its dialog              |
 | `C`, `L`         | Keep the cloud's or the notebook's file, in the fix's questions |
+| `D`              | Review what a max-delete stop would delete                      |
 | `B`              | Put DriveSync on the Omarchy bar, when offered                  |
 | `N`              | Say no to that offer, or hide its notice for good               |
 | `?`              | Show or hide the shortcuts                                      |
@@ -175,6 +176,34 @@ No fix is offered where the config's `runOnlyWhen` says no (another home
 mounted), nor after `--max-delete` stopped a run: a resync would bring the
 deleted files back.
 
+## When too many files would be deleted
+
+bisync's `--max-delete` guard (5% in drive-sync's config) stops a run that
+would delete more than that share of one side, before it deletes anything.
+The run's log lists every file it would have deleted, and DriveSync shows
+that list instead of a fix:
+
+1. The headline counts the files, the card says "press D", and the bar names
+   the cause. Nothing syncs until it is answered.
+2. `D` opens the list, split by side. A file gone from the cloud would be
+   deleted on the notebook, for good: those come first, marked `↓`. A file
+   gone from the notebook would go to the Drive trash (`↑`). The window
+   shows the first 500; `drivesync deletes --list` prints all of them.
+3. To let them through, type how many files the list has and press `Enter`.
+   One run starts with the guard raised just enough for them, never
+   `--force`; the run after it has the guard again.
+4. That run first does a dry run with the raised guard. When it finds a
+   deletion that was not in the list you confirmed (a file deleted
+   meanwhile), or the stopped run is no longer the last one, it keeps the
+   usual guard, stops again, and `D` shows the new list. The run's own
+   listing, a minute after the dry run, still has one raised guard for both
+   sides: confirming 1,800 deletions out of 33,000 lets either side lose up to
+   6% in that listing.
+
+The confirmation lasts for one run and expires after 30 minutes, in case the
+run never started (a pause set right after it). When the files should not go,
+restore them in `~/Drive` (or from the Drive trash) and sync again.
+
 ## Command line
 
 ```sh
@@ -186,12 +215,16 @@ drivesync pause [--minutes N | --until-tomorrow]   # no flag: until resumed
 drivesync resume           # end the pause and start a run
 drivesync takeover --check | --apply | --undo
 drivesync fix --start | --confirm | --answers <file.json> | --cancel | --retry
+drivesync deletes --list | --allow <count>   # after a max-delete stop
 ```
 
-`sync`, `pause`, `resume`, `takeover` and `fix` take `--json` and answer
-`{"ok": ..., "error": ...}`. `fix --answers` reads `{"<path>": "cloud" |
-"notebook"}` with an answer for every file the fix asked about. The units
-call `run-condition`, `run`, `notify`, `watchdog` and `fix-run`.
+`sync`, `pause`, `resume`, `takeover`, `fix` and `deletes` take `--json` and
+answer `{"ok": ..., "error": ...}`. `fix --answers` reads `{"<path>": "cloud" |
+"notebook"}` with an answer for every file the fix asked about. `deletes
+--list --json` adds `count`, `cloudCount`, `notebookCount`, `guardCount`,
+`guardTotal`, `runStart` and `list` (at most 500 `{path, deletedInCloud}`);
+`deletes --allow` takes the number of files in that list. The units call
+`run-condition`, `run`, `notify`, `watchdog` and `fix-run`.
 
 The JSON is version 2 of a fixed contract: `version`, `now`, `status`,
 `tone` (`ok`, `busy`, `warning`, `error`), `causeKind`, `causeDetail`,

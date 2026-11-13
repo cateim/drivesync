@@ -7,6 +7,7 @@
 #include <functional>
 
 #include "backend.h"
+#include "fixstate.h"
 #include "notifier.h"
 #include "syncconfig.h"
 
@@ -48,6 +49,9 @@ struct FixTools {
 // --retry [--json]". --answers takes {"<path>": "cloud" | "notebook"}, and
 // every file the fix asked about must have one. systemctl is the one in paths.
 int runFixCommand(const QStringList &arguments, const BackendPaths &paths, QTextStream &out, QTextStream &err);
+// --retry: from a failed step, or one the unit left halfway; starts the
+// unit. Call it holding the FixLock. The error, or empty.
+QString retryFix(const BackendPaths &paths, const FixState &state);
 
 // "drivesync fix-run", the ExecStart of drive-sync-fix.service: runs the
 // current step and the ones after it until the fix needs the user, fails or

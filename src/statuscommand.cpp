@@ -64,7 +64,7 @@ SnapshotSources gatherSources(const BackendPaths &paths, const QDateTime &now, i
 
     bool found = false;
     bool truncated = false;
-    const QString text = SyncLog::readTail(paths.log, kTailBytes, &found, &truncated);
+    const QString text = SyncLog::readRecent(paths.log, kTailBytes, &found, &truncated);
     src.logFound = found;
     src.runs = SyncLog::parse(text, kStateRuns, truncated);
 
@@ -132,6 +132,7 @@ QString usageText() {
            "       drivesync resume [--json]\n"
            "       drivesync takeover --check | --apply | --undo [--json]\n"
            "       drivesync fix --start | --confirm | --answers <file.json> | --cancel | --retry [--json]\n"
+           "       drivesync deletes --list | --allow <count> [--json]\n"
            "       drivesync run-condition | run | notify | watchdog | fix-run    (for the units)\n"
            "       drivesync --help\n";
 }

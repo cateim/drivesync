@@ -139,10 +139,11 @@ void Backend::watchAppState() {
 void Backend::readLog() {
     bool found = false;
     bool truncated = false;
-    const QString text = SyncLog::readTail(m_paths.log, kTailBytes, &found, &truncated);
+    const QString text = SyncLog::readRecent(m_paths.log, kTailBytes, &found, &truncated);
     m_logFound = found;
     m_parsed = SyncLog::parse(text, kStateRuns, truncated);
     watchLog();
+    updateBlocked(text);
 
     // A run that just started or ended changes what systemd says, and an
     // ended run may have left conflict copies behind.
@@ -515,6 +516,24 @@ void Backend::updateFix(const FixState &fix) {
     m_fix = fix;
     emit fixChanged();
 }
+
+void Backend::updateBlocked(const QString &logText) {
+    const bool guardStop = !m_parsed.isEmpty() && m_parsed.last().outcome == "failed"
+                           && m_parsed.last().causeKind == "maxDelete";
+    // A stopped run never changes: read its list once.
+    if (guardStop && m_blocked.count > 0 && m_blocked.runStart == m_parsed.last().start)
+        return;
+    const std::optional<BlockedDeletes> blocked = guardStop ? blockedDeletes(logText, kShownCopies) : std::nullopt;
+    if (!blocked && m_blocked.count == 0)
+        return;
+    m_blocked = blocked.value_or(BlockedDeletes());
+    m_blockedList.clear();
+    for (const BlockedDelete &d : m_blocked.list)
+        m_blockedList.append(QVariantMap{{"path", d.path}, {"deletedInCloud", d.deletedInCloud}});
+    emit blockedChanged();
+}
+
+void Backend::allowDeletes(int count) { control({"deletes", "--allow", QString::number(count)}); }
 
 QVariantList Backend::fixQuestions() const {
     QVariantList list;

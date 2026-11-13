@@ -73,7 +73,9 @@ ApplicationWindow {
         && takeoverSetup.blockers.length === 1 && takeoverSetup.blockers[0] === "running"
 
     function move(step) {
-        if (fixQuestions.visible)
+        if (deleteDialog.visible)
+            deleteDialog.scroll(step)
+        else if (fixQuestions.visible)
             fixQuestions.move(step)
         else if (fixDialog.visible)
             fixDialog.scroll(step)
@@ -93,6 +95,7 @@ ApplicationWindow {
     Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: takeoverDialog.visible; onActivated: takeoverDialog.close() }
     Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: fixDialog.visible; onActivated: fixDialog.close() }
     Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: fixQuestions.visible; onActivated: fixQuestions.close() }
+    Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: deleteDialog.visible; onActivated: deleteDialog.close() }
     Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; onActivated: Qt.quit() }
     Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; onActivated: backend.refresh() }
     Shortcut { sequence: "O"; context: Qt.ApplicationShortcut; enabled: !win.dialogOpen; onActivated: backend.openDriveFolder() }
@@ -111,7 +114,12 @@ ApplicationWindow {
     // While a dialog is open its own keys win: two enabled shortcuts on the
     // same key cancel each other out.
     readonly property bool dialogOpen: pauseMenu.visible || takeoverDialog.visible || fixDialog.visible
-                                       || fixQuestions.visible
+                                       || fixQuestions.visible || deleteDialog.visible
+    // The newest run stopped at the max-delete guard and DriveSync runs
+    // drive-sync: D reviews what it would delete (spec 5b). Also after a
+    // fix whose final run stopped there.
+    readonly property bool deletesHeld: backend.managed && backend.blockedCount > 0
+                                        && (backend.status === "failed" || backend.status === "fixFailed")
     Shortcut { sequences: ["Tab", "Backtab"]; context: Qt.ApplicationShortcut; enabled: !win.dialogOpen; onActivated: win.page = 1 - win.page }
     Shortcut { sequence: "1"; context: Qt.ApplicationShortcut; enabled: !win.dialogOpen; onActivated: win.page = 0 }
     Shortcut { sequence: "2"; context: Qt.ApplicationShortcut; enabled: !win.dialogOpen; onActivated: win.page = 1 }
@@ -166,6 +174,12 @@ ApplicationWindow {
         enabled: (fixDialog.visible && fixDialog.hasFix) || fixQuestions.visible
         onActivated: fixQuestions.visible ? fixQuestions.cancelFix() : fixDialog.cancelFix()
     }
+    Shortcut {
+        sequence: "D"
+        context: Qt.ApplicationShortcut
+        enabled: !win.dialogOpen && win.deletesHeld
+        onActivated: deleteDialog.open()
+    }
     Shortcut { sequence: "C"; context: Qt.ApplicationShortcut; enabled: fixQuestions.visible; onActivated: fixQuestions.choose("cloud") }
     Shortcut { sequence: "L"; context: Qt.ApplicationShortcut; enabled: fixQuestions.visible; onActivated: fixQuestions.choose("notebook") }
     Shortcut { sequences: ["Down", "J"]; context: Qt.ApplicationShortcut; onActivated: win.move(1) }
@@ -194,6 +208,12 @@ ApplicationWindow {
         enabled: fixQuestions.visible
         onActivated: fixQuestions.send()
     }
+    Shortcut {
+        sequences: ["Return", "Enter"]
+        context: Qt.ApplicationShortcut
+        enabled: deleteDialog.visible
+        onActivated: deleteDialog.accept()
+    }
 
     // Right-to-left languages mirror the window; the Translator sets the
     // application's layout direction.
@@ -221,6 +241,12 @@ ApplicationWindow {
             FixBanner {
                 Layout.fillWidth: true
                 onFixRequested: win.openFix()
+            }
+
+            DeleteBanner {
+                Layout.fillWidth: true
+                deletesHeld: win.deletesHeld
+                onReviewRequested: deleteDialog.open()
             }
 
             TakeoverBanner {
@@ -295,5 +321,6 @@ ApplicationWindow {
         TakeoverDialog { id: takeoverDialog }
         FixDialog { id: fixDialog }
         FixQuestions { id: fixQuestions; now: win.now }
+        DeleteDialog { id: deleteDialog }
     }
 }

@@ -30,6 +30,7 @@ Panel {
       case "systemd": return strings.t("cause.systemd").arg(status.causeDetail)
       case "filtersChanged": return strings.t("cause.filtersChanged")
       case "fixInterrupted": return strings.t("cause.fixInterrupted")
+      case "maxDelete": return strings.t("cause.maxDelete")
     }
     return status.causeDetail !== "" ? status.causeDetail : strings.t("cause.unknown")
   }

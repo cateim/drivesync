@@ -255,3 +255,16 @@ QString SyncLog::readTail(const QString &path, qint64 maxBytes, bool *found, boo
     }
     return QString::fromUtf8(file.readAll());
 }
+
+QString SyncLog::readRecent(const QString &path, qint64 maxBytes, bool *found, bool *truncated) {
+    constexpr qint64 kMaxRecentBytes = 64LL * 1024 * 1024;
+    bool cut = false;
+    QString text = readTail(path, maxBytes, found, &cut);
+    while (cut && maxBytes < kMaxRecentBytes && !text.contains(QLatin1String(": Synching Path1 "))) {
+        maxBytes = qMin(maxBytes * 4, kMaxRecentBytes);
+        text = readTail(path, maxBytes, found, &cut);
+    }
+    if (truncated)
+        *truncated = cut;
+    return text;
+}

@@ -29,6 +29,7 @@
   "cause.unknown": "O log não tem detalhe sobre isso",
   "cause.filtersChanged": "Os filtros mudaram: abra o DriveSync e aperte F",
   "cause.fixInterrupted": "O conserto parou no meio: abra o DriveSync para tentar de novo",
+  "cause.maxDelete": "Uma rodada apagaria arquivos demais: abra o DriveSync e aperte D",
   "row.lastSuccess": "Última sincronização",
   "row.lastSuccessValue": "%1 (%2)",
   "row.lastRun": "Última rodada",

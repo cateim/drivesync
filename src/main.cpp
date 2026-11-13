@@ -11,6 +11,7 @@
 #include <QUrl>
 
 #include "backend.h"
+#include "blockeddeletes.h"
 #include "clockformat.h"
 #include "controlcommands.h"
 #include "fixcommand.h"
@@ -35,7 +36,7 @@ int main(int argc, char *argv[]) {
     // Commands that need no display run without a GUI application, so the
     // bar and the units can call them without touching Wayland.
     static const QStringList headless{"status", "sync", "pause", "resume", "run-condition", "run", "notify",
-                                      "watchdog", "takeover", "fix", "fix-run"};
+                                      "watchdog", "takeover", "fix", "fix-run", "deletes"};
     if (headless.contains(command)) {
         QCoreApplication app(argc, argv);
         app.setApplicationName("drivesync");
@@ -58,6 +59,8 @@ int main(int argc, char *argv[]) {
             return runTakeoverCommand(rest, TakeoverPaths::defaults(), paths, out, err);
         if (command == "fix")
             return runFixCommand(rest, paths, out, err);
+        if (command == "deletes")
+            return runDeletesCommand(rest, paths, out, err);
         if (command == "notify" || command == "watchdog" || command == "fix-run") {
             // The cards are read by a person, in the Omarchy language.
             Translator translator;

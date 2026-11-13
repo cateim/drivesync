@@ -5,11 +5,15 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
+#include <QSet>
 #include <QStandardPaths>
+#include <limits>
 #include <unistd.h>
 
 #include "fixstate.h"
 #include "pausestate.h"
+#include "snapshot.h"
+#include "synclog.h"
 
 namespace {
 
@@ -35,14 +39,24 @@ bool runProgram(const QString &program, const QStringList &arguments, QString *e
     return runProcess(program, arguments, kCommandTimeoutMs, nullptr, error);
 }
 
+QStringList withLogFile(QStringList arguments, const QString &file) {
+    for (qsizetype i = 0; i < arguments.size(); ++i) {
+        if (arguments.at(i) == "--log-file" && i + 1 < arguments.size())
+            arguments[++i] = file;
+        else if (arguments.at(i).startsWith("--log-file="))
+            arguments[i] = "--log-file=" + file;
+    }
+    return arguments;
+}
+
+}  // namespace
+
 QString startOneRun(const BackendPaths &paths) {
     QString error;
     // --no-block: the run takes minutes; the state shows it once it starts.
     runProgram(paths.systemctl, {"--user", "start", "--no-block", "drive-sync.service"}, &error);
     return error;
 }
-
-}  // namespace
 
 int commandAnswer(bool json, const QString &error, QTextStream &out, QTextStream &err) {
     return answer(json, error, out, err);
@@ -184,33 +198,105 @@ int runConditionCommand(const BackendPaths &paths, const SyncConfig &config, con
     return 1;
 }
 
-QStringList runCommandPlan(const SyncConfig &config, QString *refusal) {
+QStringList runCommandPlan(const SyncConfig &config, QString *refusal, const std::optional<AllowDeletes> &allow) {
     if (!filtersUsable(config.filtersFile, refusal))
         return {};
-    return rcloneRunArguments(config);
+    const QStringList arguments = rcloneRunArguments(config);
+    if (!allow)
+        return arguments;
+    // bisync checks each side on its own, so the side with more deletions sets it.
+    const int largestSide = qMax(allow->cloudCount, allow->notebookCount);
+    return withMaxDelete(arguments, maxDeletePercent(largestSide, allow->total, configuredMaxDelete(arguments)));
+}
+
+QString allowedRunLogLine(const AllowDeletes &allow, int percent) {
+    return QString("DriveSync raised --max-delete to %1% for this run: %2 deletions confirmed")
+        .arg(QString::number(percent), QString::number(allow.count));
+}
+
+void appendToLog(const QString &logFile, const QString &level, const QString &message) {
+    QFile log(logFile);
+    if (log.open(QIODevice::Append))
+        log.write(QString("%1 %2: %3\n")
+                      .arg(QDateTime::currentDateTime().toString("yyyy/MM/dd HH:mm:ss"), level.leftJustified(6), message)
+                      .toUtf8());
+}
+
+QStringList runPlanTakingMark(const SyncConfig &config, const QString &appState, const QString &rclone,
+                              const QDateTime &now, QString *refusal, QString *note) {
+    note->clear();
+    const std::optional<AllowDeletes> allow = takeAllowDeletes(appState, now);
+    const QStringList normal = runCommandPlan(config, refusal);
+    if (!allow || normal.isEmpty())
+        return normal;
+    const QString kept = QString("DriveSync kept --max-delete at %1% for this run: ").arg(configuredMaxDelete(normal));
+    // The confirmation is for the files of one stopped run: that run must
+    // still be the newest one (a mark written while the confirmed run was
+    // already under way would otherwise serve a later run), and every
+    // deletion the dry run finds must be in its list.
+    const std::optional<BlockedDeletes> stopped =
+        blockedDeletes(SyncLog::readRecent(config.logFile, kTailBytes), std::numeric_limits<int>::max());
+    if (!stopped || !allow->runStart.isValid()
+        || stopped->runStart.toSecsSinceEpoch() != allow->runStart.toSecsSinceEpoch()) {
+        *note = kept + "a confirmation of deletions was dropped, since the run it was for is no longer the last one";
+        return normal;
+    }
+    const QStringList raised = runCommandPlan(config, refusal, allow);
+    const int percent = configuredMaxDelete(raised);
+    const QString dryLog = appState + "/allowed-dry-run.log";
+    QFile::remove(dryLog);
+    QString error;
+    // No time limit: the unit's TimeoutStartSec bounds the run, dry part included.
+    const bool dryRunOk = runProcess(rclone, withLogFile(raised, dryLog) + QStringList{"--dry-run"}, -1, nullptr, &error);
+    QFile dry(dryLog);
+    const QString dryText = dry.open(QIODevice::ReadOnly) ? QString::fromUtf8(dry.readAll()) : QString();
+    const BlockedDeletes found = deletionsInNewestRun(dryText, std::numeric_limits<int>::max());
+    QSet<QString> confirmed;
+    for (const BlockedDelete &d : stopped->list)
+        confirmed.insert(QString(d.deletedInCloud ? "1:" : "2:") + d.path);
+    int unconfirmed = 0;
+    for (const BlockedDelete &d : found.list)
+        if (!confirmed.contains(QString(d.deletedInCloud ? "1:" : "2:") + d.path))
+            ++unconfirmed;
+    if (dryRunOk && unconfirmed == 0) {
+        *note = allowedRunLogLine(*allow, percent);
+        return raised;
+    }
+    if (dryRunOk)
+        *note = kept
+                + QString("a dry run finds %1 deletion%2 not in the list that was confirmed (gone from the cloud: %3, "
+                          "gone from the notebook: %4)")
+                      .arg(QString::number(unconfirmed), unconfirmed == 1 ? QString() : QString("s"),
+                           QString::number(found.cloudCount), QString::number(found.notebookCount));
+    else if (dryText.contains("Safety abort: too many deletes"))
+        *note = kept
+                + QString("its dry run with the raised guard still stopped, so more files would go than the %1 confirmed")
+                      .arg(allow->count);
+    else
+        *note = kept + QString("its dry run with the raised guard failed (%1)").arg(error.left(200));
+    return normal;
 }
 
 int runRunCommand(const BackendPaths &paths, QTextStream &err) {
     QString error;
     const auto config = loadSyncConfig(paths.config, &error);
-    QStringList arguments;
-    if (config)
-        arguments = runCommandPlan(*config, &error);
     const QString rclone = QStandardPaths::findExecutable("rclone");
-    if (!arguments.isEmpty() && rclone.isEmpty())
+    QStringList arguments;
+    QString note;
+    if (config && rclone.isEmpty())
         error = "rclone was not found";
-    if (arguments.isEmpty() || rclone.isEmpty()) {
+    else if (config)
+        arguments = runPlanTakingMark(*config, paths.appState, rclone, QDateTime::currentDateTimeUtc(), &error, &note);
+    if (arguments.isEmpty()) {
         err << "drivesync: did not start rclone: " << error << "\n";
         err.flush();
         // In the log too, in rclone's format, so the window and the
         // notification show why this run failed.
-        QFile log(config ? config->logFile : paths.log);
-        if (log.open(QIODevice::Append))
-            log.write(QString("%1 CRITICAL: DriveSync did not start rclone: %2\n")
-                          .arg(QDateTime::currentDateTime().toString("yyyy/MM/dd HH:mm:ss"), error)
-                          .toUtf8());
+        appendToLog(config ? config->logFile : paths.log, "CRITICAL", "DriveSync did not start rclone: " + error);
         return 1;
     }
+    if (!note.isEmpty())
+        appendToLog(config->logFile, "INFO", note);
 
     QList<QByteArray> storage{QFile::encodeName(rclone)};
     for (const QString &argument : arguments)

@@ -281,7 +281,7 @@ test("warnings get the window's orange on the bar and in the panel", () => {
 
 test("the failing line has a sentence for every cause the app names", () => {
   const qml = readFileSync(new URL("../DriveSync.qml", import.meta.url), "utf8")
-  for (const kind of ["lostListings", "outOfSync", "timeout", "systemd", "filtersChanged", "fixInterrupted"])
+  for (const kind of ["lostListings", "outOfSync", "timeout", "systemd", "filtersChanged", "fixInterrupted", "maxDelete"])
     assert.match(qml, new RegExp(`case "${kind}": return strings\\.t\\("cause\\.${kind}"\\)`), kind)
   // A fix that stopped says why too, not only a failed run.
   assert.match(qml, /root\.syncState === "failing" \|\| root\.status\.status === "fixFailed"/)

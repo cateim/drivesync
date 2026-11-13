@@ -85,7 +85,11 @@ Rectangle {
             ? qsTr("The listings of the two sides don't match, so bisync dropped its base. Press F to fix it.")
             : qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: drive-sync.sh resync")
         case "filtersChanged": return qsTr("The filters changed since the last base, so every run waits. Press F to rebuild the base with them.")
-        case "maxDelete": return qsTr("%1\nA fix would bring the deleted files back, so F is off. Restore them, or let one run through by hand with --force.").arg(detail)
+        // DriveSync lists the deletions and lets one run through (D); the
+        // old scripts leave it to rclone by hand.
+        case "maxDelete": return backend.managed && backend.blockedCount > 0
+            ? qsTr("A run would delete %Ln files, more than the guard allows, so it stopped and deleted nothing. Press D to review them.", "", backend.blockedCount)
+            : qsTr("%1\nA fix would bring the deleted files back, so F is off. Restore them, or let one run through by hand with --force.").arg(detail)
         case "timeout": return qsTr("The run went past its time limit (TimeoutStartSec) and systemd stopped it.")
         case "systemd": return qsTr("systemd says the last run failed (%1), and the log has nothing about it.").arg(detail)
         case "error": return detail

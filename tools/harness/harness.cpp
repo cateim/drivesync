@@ -6,7 +6,8 @@
 //
 //   bin/harness --out build/shot.png [options]   (build/shot.png by default)
 //   --lang en|pt-BR                      the Omarchy language
-//   --scenario ok|running|failed|clean|empty   clean: no conflict copies; empty: no run in the log
+//   --scenario ok|running|failed|clean|empty|maxdelete   clean: no conflict copies; empty: no run in the log;
+//                                        maxdelete: the last run stopped at the guard, 2 + 1800 deletions
 //   --clock "<Qt format>"                the bar clock; without it, the system locale's hours
 //   --pause none|hour|forever|ended      a pause mark; --managed: DriveSync's own units
 //   --takeover none|offer|running|blocked|failed
@@ -14,9 +15,9 @@
 //   --fix none|fixing|confirm|questions|failed   a fix at that step (implies --managed);
 //                                        confirm comes with a dry run of 1200 copies
 //   --fix-later                          writes that fix after the window is up, so it opens by itself
-//   --keys <letters>                     t Tab, 1 and 2 the tabs, h ?, d Down, e Esc,
-//                                        s Space, p P, o T, f F, c C, l L, x X, r Enter,
-//                                        w waits a second
+//   --keys <letters>                     t Tab, digits (1 and 2 the tabs), h ?, d Down, e Esc,
+//                                        s Space, p P, o T, f F, D D, c C, l L, x X, r Enter,
+//                                        b Backspace, w waits a second
 //   --width N --height N                 1000x700 by default
 //   --real                               this machine's drive-sync: never for the README
 
@@ -103,6 +104,22 @@ int main(int argc, char **argv) {
         log += L(now.addSecs(-10), "INFO", "");
         log += "Transferred:   \t 0 B / 0 B, -, 0 B/s, ETA -\nChecks:  41000 / 41000, 100%, Listed 41210\nElapsed time:  4m0.0s\n\n";
         active = "activating";
+    } else if (scenario == "maxdelete") {
+        // What rclone 1.75.2 writes when --max-delete stops a run: each
+        // deletion, both sides, then the abort for the side over the guard.
+        const QDateTime s = now.addSecs(-200);
+        log += L(s, "INFO", kStart) + L(s, "INFO", "Building Path1 and Path2 listings");
+        log += L(s, "INFO", "Path1 checking for diffs");
+        for (const QString &p : {QString("Notes/old-draft.md"), QString("Documents/budget-2025.ods")})
+            log += L(s, "INFO", C("Path1", "File was deleted", p));
+        log += L(s, "INFO", "Path1:    2 changes:    0 new,    0 modified,    2 deleted");
+        log += L(s, "INFO", "Path2 checking for diffs");
+        for (int i = 0; i < 1800; ++i)
+            log += L(s, "INFO", C("Path2", "File was deleted", QString("Photos/2024/trip-%1.jpg").arg(i, 4, 10, QChar('0'))));
+        log += L(s, "INFO", "Path2: 1800 changes:    0 new,    0 modified, 1800 deleted");
+        log += L(s, "ERROR", R"(Safety abort: too many deletes (>5%, 1800 of 33411) on Path2 "/home/someone/Drive/". Run with --force if desired.)");
+        log += L(s, "NOTICE", "Bisync aborted. Please try again.");
+        log += L(s, "NOTICE", "Failed to bisync: too many deletes");
     }
     if (scenario == "empty")
         log.clear();  // a new or just rotated log
@@ -246,13 +263,14 @@ int main(int argc, char **argv) {
         else if (k == 'p') QTest::keyClick(window, Qt::Key_P);
         else if (k == 'o') QTest::keyClick(window, Qt::Key_T);
         else if (k == 'f') QTest::keyClick(window, Qt::Key_F);
+        else if (k == 'D') QTest::keyClick(window, Qt::Key_D);
+        else if (k == 'b') QTest::keyClick(window, Qt::Key_Backspace);
         else if (k == 'c') QTest::keyClick(window, Qt::Key_C);
         else if (k == 'l') QTest::keyClick(window, Qt::Key_L);
         else if (k == 'x') QTest::keyClick(window, Qt::Key_X);
         else if (k == 'r') QTest::keyClick(window, Qt::Key_Return);
         else if (k == 'w') QTest::qWait(1100);
-        else if (k == '1') QTest::keyClick(window, Qt::Key_1);
-        else if (k == '2') QTest::keyClick(window, Qt::Key_2);
+        else if (k.isDigit()) QTest::keyClick(window, Qt::Key(Qt::Key_0 + k.digitValue()));
         QTest::qWait(250);
     }
     QTest::qWait(400);

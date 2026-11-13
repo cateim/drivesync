@@ -179,10 +179,13 @@ QString runOnlyWhenRefusal(const SyncConfig &config) {
 // deleted files back. Read from the newest finished run in the log.
 QString maxDeleteRefusal(const SyncConfig &config) {
     bool truncated = false;
-    const QString text = SyncLog::readTail(config.logFile, kTailBytes, nullptr, &truncated);
+    const QString text = SyncLog::readRecent(config.logFile, kTailBytes, nullptr, &truncated);
     const QList<SyncRun> runs = SyncLog::parse(text, 5, truncated);
     for (auto it = runs.crbegin(); it != runs.crend(); ++it) {
-        if (it->outcome == "open")
+        // An open run says nothing yet, and a record with no phase never
+        // reached bisync (DriveSync's own refusal, rclone that did not
+        // start): neither lifts the stop before it.
+        if (it->outcome == "open" || it->phase.isEmpty())
             continue;
         if (it->causeKind == "maxDelete")
             return "the last run stopped because it would delete too many files (--max-delete); a fix would bring "
@@ -248,6 +251,8 @@ QString cancelFix(const BackendPaths &paths) {
     return clearFix(paths.appState) ? QString() : QString("cannot remove %1").arg(fixStatePath(paths.appState));
 }
 
+}  // namespace
+
 QString retryFix(const BackendPaths &paths, const FixState &state) {
     QString error;
     const QString unit = unitState(paths, kFixUnit, &error);
@@ -263,6 +268,8 @@ QString retryFix(const BackendPaths &paths, const FixState &state) {
         return QString("there is nothing to retry: the fix is at %1").arg(state.step);
     return advance(paths, state, step);
 }
+
+namespace {
 
 // touch -c: a file that is not there stays not there.
 bool touchExisting(const QString &path) {
@@ -416,8 +423,9 @@ QString baseStep(const SyncConfig &config, const FixTools &tools, FixState *stat
 
 // Step 6: the answers, then a normal run with the routine flags and the md5
 // check. Safe to run twice: a touch repeats, and a file already deleted
-// answers "not found".
-QString finishStep(const SyncConfig &config, const FixTools &tools, FixState *state) {
+// answers "not found". A run that stopped at the max-delete guard comes back
+// here with the user's confirmation ("drivesync deletes --allow").
+QString finishStep(const QString &appState, const SyncConfig &config, const FixTools &tools, FixState *state) {
     QString error;
     for (const FixQuestion &q : std::as_const(state->questions)) {
         const QString remote = remoteFile(config.remote, q.path);
@@ -441,10 +449,13 @@ QString finishStep(const SyncConfig &config, const FixTools &tools, FixState *st
             return QString("%1 has no answer; cancel the fix and start again").arg(q.path);
         }
     }
-    QString refusal;
-    const QStringList arguments = runCommandPlan(config, &refusal);
+    QString refusal, note;
+    const QStringList arguments =
+        runPlanTakingMark(config, appState, tools.rclone, QDateTime::currentDateTimeUtc(), &refusal, &note);
     if (arguments.isEmpty())
         return refusal;
+    if (!note.isEmpty())
+        appendToLog(config.logFile, "INFO", note);
     error = runBisync(tools, arguments, config.logFile);
     if (!error.isEmpty())
         return error;
@@ -518,7 +529,7 @@ int runFixUnit(const BackendPaths &paths, const SyncConfig &config, const FixToo
             else if (step == "base")
                 error = baseStep(config, tools, &state);
             else
-                error = finishStep(config, tools, &state);
+                error = finishStep(paths.appState, config, tools, &state);
         }
         if (!error.isEmpty()) {
             state.failedStep = step;

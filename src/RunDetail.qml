@@ -43,7 +43,9 @@ Rectangle {
             ? qsTr("The listings of the two sides don't match, so bisync dropped its base. Press F to fix it.")
             : qsTr("The listings of the two sides don't match, so bisync dropped its base. To recover: drive-sync.sh resync")
         case "filtersChanged": return qsTr("The filters changed since the last base, so every run waits. Press F to rebuild the base with them.")
-        case "maxDelete": return qsTr("%1\nA fix would bring the deleted files back, so F is off. Restore them, or let one run through by hand with --force.").arg(run.causeDetail)
+        case "maxDelete": return backend.managed
+            ? qsTr("%1\nA fix would bring the deleted files back, so F is off. While this is the last run, D reviews what it would delete.").arg(run.causeDetail)
+            : qsTr("%1\nA fix would bring the deleted files back, so F is off. Restore them, or let one run through by hand with --force.").arg(run.causeDetail)
         case "error": return run.causeDetail
         case "none": return qsTr("The log has no detail about it.")
         }

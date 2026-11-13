@@ -6,6 +6,7 @@ TEMPLATE = app
 
 HEADERS += \
     src/backend.h \
+    src/blockeddeletes.h \
     src/clockformat.h \
     src/conflictcache.h \
     src/controlcommands.h \
@@ -28,6 +29,7 @@ HEADERS += \
 SOURCES += \
     src/main.cpp \
     src/backend.cpp \
+    src/blockeddeletes.cpp \
     src/clockformat.cpp \
     src/conflictcache.cpp \
     src/controlcommands.cpp \

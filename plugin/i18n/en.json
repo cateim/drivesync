@@ -29,6 +29,7 @@
   "cause.unknown": "The log has no detail about it",
   "cause.filtersChanged": "The filters changed: open DriveSync and press F",
   "cause.fixInterrupted": "The fix stopped halfway: open DriveSync to retry it",
+  "cause.maxDelete": "A run would delete too many files: open DriveSync and press D",
   "row.lastSuccess": "Last sync",
   "row.lastSuccessValue": "%1 (%2)",
   "row.lastRun": "Last run",

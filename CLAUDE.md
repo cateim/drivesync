@@ -20,7 +20,9 @@ fixes a broken base (`F`, `drivesync fix`): a resync with the folder in use,
 run by `drive-sync-fix.service`, which only starts after the user confirms a
 dry run and touches single synced files only as the fix's comparison or the
 user's answers say. It never starts a resync or touches a synced file
-otherwise. The plan for growing it into the
+otherwise. Since step 5b, after `--max-delete` stopped a run, it lists what
+that run would delete (`D`, `drivesync deletes`) and lets one run through
+with the guard raised once the user types how many files that is. The plan for growing it into the
 owner of drive-sync is `docs/superpowers/specs/2026-11-07-drive-sync-manager-design.md`; `docs/` is git-ignored,
 so that file exists only in the maintainer's working copy. The `drive-sync` scripts themselves live
 in the DIY repository (`assets/omarchy/home/.local/bin/drive-sync.sh` and
@@ -57,6 +59,7 @@ src/controlcommands.{h,cpp}  sync, pause, resume, run-condition, run (execs rclo
 src/fixstate.{h,cpp}    the fix's state machine in ~/.local/state/drivesync/fix.json (steps, questions)
 src/fixcommand.{h,cpp}  `drivesync fix` and `fix-run` (drive-sync-fix.service): dry run, base run, questions, final run
 src/listingdiff.{h,cpp}  reads bisync's .lst listings (Go %q names) and compares both sides, as drive-sync.sh did
+src/blockeddeletes.{h,cpp}  a max-delete stop: its deletions from the log, the one-run mark (allow-deletes.json), the raised guard, `drivesync deletes`
 src/legacymigration.{h,cpp}  moves SyncWatch's folders to the DriveSync names; first thing main() does
 src/notifier.{h,cpp}    notify (ExecStopPost) and watchdog: the port of drive-sync-aviso
 src/takeover.{h,cpp}    detect, apply with rollback, undo; `drivesync takeover`
@@ -76,6 +79,8 @@ src/TakeoverBanner.qml  offer to take over (T), or what blocks it; TakeoverDialo
 src/FixBanner.qml       offer to fix (F) after lost listings, out of sync or changed filters
 src/FixDialog.qml       the fix's start, the dry run to confirm (Enter) and a stopped step (retry; X cancels)
 src/FixQuestions.qml    the files that changed in the cloud during the base run: C cloud, L notebook, Enter sends
+src/DeleteBanner.qml    offer to review the deletions (D) after a max-delete stop
+src/DeleteDialog.qml    those deletions per side, and the typed count that lets one run through (Enter)
 src/format.js           relative times, durations, sizes
 src/i18n/*.json         en (plural forms only) and pt-BR
 tests/                  Qt Test suite
@@ -91,7 +96,7 @@ assets/images/          README pictures: window-*.png from bin/harness over a ma
 
 ```sh
 bin/build            # about 30 s from clean
-bin/test             # 170 cases, about 9 s (two run real rclone on temp folders)
+bin/test             # 193 cases, about 14 s (four run real rclone on temp folders)
 bin/install          # needs sudo (pacman -U); run it in a real terminal
 bin/harness --scenario running --clock "h:mm AP" --out build/shot.png   # the window offscreen, made-up data; options atop tools/harness/harness.cpp
 makepkg -f           # from pkgbuild/, with BUILDDIR and PKGDEST set as in bin/install, to check packaging without sudo
@@ -157,6 +162,24 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
 - Runs refused for the filters' md5 have `causeKind` `filtersChanged` (the
   refusal text ends in `kFiltersChangedReason`): a normal card says "press F"
   instead of the critical "stopped syncing" one.
+- A run `--max-delete` stopped is `causeKind` `maxDelete` (spec 5b). Its
+  deletions come from its own log lines (`blockedDeletes`, only when it is
+  the newest run), so the headline, the card and `D` count both sides.
+  `drivesync deletes --allow <count>` (the count of that list, typed by the
+  user) writes `allow-deletes.json`; the next `drivesync run` (or the fix's
+  final run, when that is what stopped) takes it, removes it, and dry-runs
+  the plan with `--max-delete` raised to `ceil(100 * larger side / total)`
+  into `allowed-dry-run.log`. The mark names the stopped run's start, and it
+  is dropped unless that run is still the newest one; the real run gets the
+  raised guard only when the dry run ends well and every deletion it finds,
+  by side and path, is in that run's list. Otherwise the config's own guard
+  stops it again with the new list. A mark older than 30 minutes is dropped.
+  Never `--force`. `maxDeleteRefusal` (the fix) looks past records with no
+  phase, which never reached bisync (a refusal), to the stop before them.
+- Every reader of the log uses `SyncLog::readRecent`: the tail, extended back
+  (at most 64 MB) until it holds a "Synching Path1" line, because a stop of
+  tens of thousands of deletions writes more than the 3 MB tail, and its
+  start would be cut off.
 
 ## Conventions
 
@@ -213,6 +236,17 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
   other, so there is never a second scheduler.
 - `unix` is a predefined macro with GCC on Linux: a variable or lambda named
   `unix` fails to compile.
+- moc reads a `'` inside a raw string literal as a char literal: a test with
+  `R"(q'uote)"` made moc generate nothing ("No relevant classes found") and
+  the link fail on the vtable. Use a plain escaped string there.
+- **The max-delete guard, as rclone 1.75.2 does it** (tried 2026-11-12):
+  each side is checked against its own count in the last listing, Path1
+  first, after both sides' "File was deleted" lines are logged; the
+  percentage is compared as a real number (11 of 21 stops at 52 and passes at
+  53; 11 of 20 passes at 55); an abort leaves the listings as they were (no
+  `-err`); a `--dry-run` writes the deletion lines as NOTICE and leaves the
+  `.lst` files alone (it writes `-dry` ones). A name with `"` or `\` is
+  written Go-quoted in those lines.
 
 - **Never use local-time `QDateTime` in hot paths.** On this machine each
   local-time conversion or comparison costs about 0.2 ms (Qt resolves the

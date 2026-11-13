@@ -12,6 +12,7 @@
 #include <QVariantMap>
 #include <functional>
 
+#include "blockeddeletes.h"
 #include "snapshot.h"
 #include "synclog.h"
 
@@ -66,6 +67,14 @@ class Backend : public QObject {
     // The base run already ran: cancelling now throws it away, and the next
     // run fails until another fix.
     Q_PROPERTY(bool fixBaseDone READ fixBaseDone NOTIFY fixChanged)
+    // When the newest run stopped at the max-delete guard (spec 5b): what it
+    // would delete, per side, and at most 500 of them as {path,
+    // deletedInCloud}, the ones gone from the cloud first. 0 and empty
+    // otherwise.
+    Q_PROPERTY(int blockedCount READ blockedCount NOTIFY blockedChanged)
+    Q_PROPERTY(int blockedCloudCount READ blockedCloudCount NOTIFY blockedChanged)
+    Q_PROPERTY(int blockedNotebookCount READ blockedNotebookCount NOTIFY blockedChanged)
+    Q_PROPERTY(QVariantList blockedList READ blockedList NOTIFY blockedChanged)
     Q_PROPERTY(QString logPath READ logPath CONSTANT)
     Q_PROPERTY(QString drivePath READ drivePath CONSTANT)
 
@@ -101,6 +110,10 @@ public:
         return m_fix.step == "questions" || m_fix.step == "finishing"
                || (m_fix.step == "failed" && m_fix.failedStep == "finishing");
     }
+    int blockedCount() const { return m_blocked.count; }
+    int blockedCloudCount() const { return m_blocked.cloudCount; }
+    int blockedNotebookCount() const { return m_blocked.notebookCount; }
+    QVariantList blockedList() const { return m_blockedList; }
     QString logPath() const { return m_paths.log; }
     QString drivePath() const { return m_paths.drive; }
 
@@ -126,6 +139,9 @@ public:
     Q_INVOKABLE void answerFix(const QStringList &answers);
     Q_INVOKABLE void cancelFix();
     Q_INVOKABLE void retryFix();
+    // "drivesync deletes --allow <count>": count is what the user typed,
+    // checked again by the command against the list in the log.
+    Q_INVOKABLE void allowDeletes(int count);
     // Reads the config again after a takeover or an undo, so the window
     // follows the log and the controls it now owns without a restart.
     Q_INVOKABLE void reloadConfig();
@@ -145,6 +161,7 @@ signals:
     void conflictsChanged();
     void messageChanged();
     void fixChanged();
+    void blockedChanged();
 
 private:
     void readLog();
@@ -154,6 +171,7 @@ private:
     void watchLog();
     void watchAppState();
     void updateFix(const FixState &fix);
+    void updateBlocked(const QString &logText);
     void setMessage(const QString &message);
     void control(const QStringList &arguments);
     void run(const QString &program, const QStringList &arguments,
@@ -193,4 +211,6 @@ private:
     FixState m_fix;
     QVariantList m_fixCopyList;
     int m_fixCopiesToNotebook = 0;
+    BlockedDeletes m_blocked;
+    QVariantList m_blockedList;
 };

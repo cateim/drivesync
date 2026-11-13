@@ -23,6 +23,7 @@ Rectangle {
         { keys: "T", what: qsTr("Let DriveSync run drive-sync, when offered") },
         { keys: "F   X", what: qsTr("Fix a broken sync, or cancel the fix from its dialog") },
         { keys: "C   L", what: qsTr("Keep the cloud's or the notebook's file, in the fix") },
+        { keys: "D", what: qsTr("Review what a max-delete stop would delete") },
         { keys: "B", what: qsTr("Put DriveSync on the Omarchy bar, when offered") },
         { keys: "N", what: qsTr("Say no to the bar offer or notice, for good") },
         { keys: "?", what: qsTr("Show or hide these shortcuts") },

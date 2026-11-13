@@ -52,4 +52,10 @@ QList<SyncRun> parse(const QString &text, int maxRuns = 40, bool startsMidway = 
 // when the file can't be read; truncated says whether the start was cut.
 QString readTail(const QString &path, qint64 maxBytes, bool *found = nullptr, bool *truncated = nullptr);
 
+// readTail, reaching further back (at most 64 MB) when the tail was cut and
+// holds no "Synching Path1" line, so the newest run is whole. A run that
+// --max-delete stopped writes one line per file it would delete: on a wiped
+// ~/Drive that is more than the tail, and the run would go unseen.
+QString readRecent(const QString &path, qint64 maxBytes, bool *found = nullptr, bool *truncated = nullptr);
+
 }
