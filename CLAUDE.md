@@ -100,7 +100,7 @@ site/                   project page on GitHub Pages (cateim.github.io/drivesync
 .github/workflows/pages.yml  publishes site/, copying the icon and window-runs.png in from assets/
 docs/superpowers/       git-ignored, local only: design (specs/) and step plans (plans/)
 pkgbuild/               PKGBUILD, .desktop, units/ (drive-sync, drive-sync-watchdog and drive-sync-fix user units, /usr/lib/systemd/user)
-assets/icons/           launcher icon, installed by the PKGBUILD; drive-sync-logo.svg is the Google Cloud consent screen logo (no tile, outlined; 120 px PNG via rsvg-convert, not packaged)
+assets/icons/           launcher icon, installed by the PKGBUILD, and the logo of the Google Cloud consent screen (no tile, dark outline; `google-cloud-logo-120.png` beside it is the 120 px upload, rendered with `rsvg-convert -w 120 -h 120 assets/icons/drive-sync.svg -o assets/icons/google-cloud-logo-120.png`, so redo it whenever the SVG changes)
 assets/images/          README pictures: window-*.png from bin/harness over a made-up log; bar-*.png are real screens with no file names
 ```
 

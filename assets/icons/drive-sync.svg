@@ -1,15 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
   <title>DriveSync</title>
-  <desc>A cream cloud on the dark Omarchy tile, with a green check badge at its lower right: the folder is in sync.</desc>
-  <rect width="128" height="128" rx="24" fill="#101010"/>
-  <!-- The cloud is a capsule with three circles on top, all one color, so it reads as one shape. -->
-  <g fill="#f5f1e8" transform="translate(-6 -6)">
-    <rect x="22" y="62" width="84" height="32" rx="16"/>
-    <circle cx="48" cy="64" r="20"/>
-    <circle cx="72" cy="54" r="26"/>
-    <circle cx="92" cy="74" r="14"/>
+  <desc>The DriveSync cloud with its green check badge, with no tile behind it. A dark outline keeps the cream cloud readable on a white page, and the cream fill keeps it readable on a dark one. Also the logo for the Google Cloud consent screen, rendered to a 120 px PNG.</desc>
+  <defs>
+    <!-- The cloud is a capsule with three circles on top, all one color, so it reads as one shape. -->
+    <g id="cloud">
+      <rect x="16" y="56" width="84" height="32" rx="16"/>
+      <circle cx="42" cy="58" r="20"/>
+      <circle cx="66" cy="48" r="26"/>
+      <circle cx="86" cy="68" r="14"/>
+    </g>
+  </defs>
+  <g transform="translate(64 64) scale(1.12) translate(-64.75 -66.75)">
+    <!-- The outline is the same shape drawn first with a stroke twice as wide, so only its outer half shows and the circles do not leave seams inside the cloud. -->
+    <use href="#cloud" fill="#23272e" stroke="#23272e" stroke-width="9" stroke-linejoin="round"/>
+    <use href="#cloud" fill="#f5f1e8"/>
+    <!-- The dark ring cuts the badge out of the cloud and doubles as its outline. -->
+    <circle cx="94" cy="92" r="24" fill="#23272e"/>
+    <circle cx="94" cy="92" r="19" fill="#82FB9C"/>
+    <path d="M85 92l6 6 12-12" fill="none" stroke="#23272e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
-  <!-- The tile-colored ring cuts the badge out of the cloud, so it stays readable at launcher sizes. -->
-  <circle cx="94" cy="92" r="20" fill="#82FB9C" stroke="#101010" stroke-width="6"/>
-  <path d="M85 92l6 6 12-12" fill="none" stroke="#101010" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
