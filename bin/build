@@ -8,4 +8,4 @@ cd "$ROOT/build"
 qmake6 "$ROOT/drivesync.pro"
 make -j"$(nproc)"
 
-echo "Built $ROOT/build/drivesync"
+echo "Built $ROOT/build/drive-sync"

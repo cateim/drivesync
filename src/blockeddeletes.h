@@ -48,7 +48,7 @@ bool guardStopHolds(const QList<SyncRun> &runs);
 std::optional<BlockedDeletes> blockedDeletes(const QString &logText, int limit);
 
 // What the user confirmed, kept for one run in <appState>/allow-deletes.json
-// ("drivesync deletes --allow"). The run that uses it raises --max-delete
+// ("drive-sync deletes --allow"). The run that uses it raises --max-delete
 // just enough for these deletions, never to --force.
 struct AllowDeletes {
     int count = 0;
@@ -75,7 +75,7 @@ QStringList withMaxDelete(const QStringList &arguments, int percent);
 // The --max-delete in the arguments; bisync's default, 50, when there is none.
 int configuredMaxDelete(const QStringList &arguments);
 
-// "drivesync deletes --list | --allow <count> [--json]". --list prints what
+// "drive-sync deletes --list | --allow <count> [--json]". --list prints what
 // the newest run would have deleted (JSON: count, cloudCount,
 // notebookCount, guardCount, guardTotal, runStart, and list, at most 500
 // {path, deletedInCloud}, the ones gone from the cloud first). --allow takes

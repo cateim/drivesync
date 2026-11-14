@@ -6,8 +6,8 @@
 #include <QStringList>
 
 // A fix rebuilds the bisync base of both sides while ~/Drive stays in use.
-// It is a state machine kept in <appState>/fix.json: "drivesync fix" moves
-// it on the user's word, and drive-sync-fix.service ("drivesync fix-run")
+// It is a state machine kept in <appState>/fix.json: "drive-sync fix" moves
+// it on the user's word, and drive-sync-fix.service ("drive-sync fix-run")
 // does the long steps. While the file exists, run-condition skips every
 // timer tick, so nothing else starts rclone in between.
 
@@ -35,7 +35,7 @@ QString fixDryRunLogPath(const QString &appState);  // <appState>/fix-dry-run.lo
 bool fixPresent(const QString &appState);
 // No file: an empty step. A file that cannot be read is a failed fix with
 // that error: holding the timer is the safer mistake, and
-// "drivesync fix --cancel" clears it.
+// "drive-sync fix --cancel" clears it.
 FixState readFix(const QString &appState);
 bool writeFix(const QString &appState, const FixState &state);
 // Also removes the dry-run log and the window's answers file. True also when

@@ -262,7 +262,7 @@ QString retryFix(const BackendPaths &paths, const FixState &state) {
     // From a failed step, or from one the unit left halfway (a logout, a kill).
     const QString step = state.step == "failed" ? state.failedStep : fixWorking(state.step) ? state.step : QString();
     if (state.step == "failed" && !fixWorking(step))
-        return QString("the fix cannot go on (%1); cancel it with drivesync fix --cancel").arg(state.error);
+        return QString("the fix cannot go on (%1); cancel it with drive-sync fix --cancel").arg(state.error);
     if (!fixWorking(step))
         return QString("there is nothing to retry: the fix is at %1").arg(state.step);
     return advance(paths, state, step);
@@ -423,7 +423,7 @@ QString baseStep(const SyncConfig &config, const FixTools &tools, FixState *stat
 // Step 6: the answers, then a normal run with the routine flags and the md5
 // check. Safe to run twice: a touch repeats, and a file already deleted
 // answers "not found". A run that stopped at the max-delete guard comes back
-// here with the user's confirmation ("drivesync deletes --allow").
+// here with the user's confirmation ("drive-sync deletes --allow").
 QString finishStep(const QString &appState, const SyncConfig &config, const FixTools &tools, FixState *state) {
     QString error;
     for (const FixQuestion &q : std::as_const(state->questions)) {
@@ -478,7 +478,7 @@ int runFixCommand(const QStringList &arguments, const BackendPaths &paths, QText
     const bool single = rest.size() == 1 && QStringList{"--start", "--confirm", "--cancel", "--retry"}.contains(action);
     if (!single && !(rest.size() == 2 && action == "--answers"))
         return commandAnswer(
-            json, "usage: drivesync fix --start | --confirm | --answers <file.json> | --cancel | --retry [--json]", out,
+            json, "usage: drive-sync fix --start | --confirm | --answers <file.json> | --cancel | --retry [--json]", out,
             err);
     // One writer at a time: the unit and the watchdog's reminder take it too.
     const FixLock lock(paths.appState);

@@ -9,12 +9,12 @@ import "DriveSyncModel.js" as Model
 
 // DriveSync's bar widget for drive-sync. The icon says at a glance how the
 // sync is doing; the panel says when, what failed, and runs one now. The
-// state comes from the app (`drivesync status --json`), so the bar and the
+// state comes from the app (`drive-sync status --json`), so the bar and the
 // window can never disagree.
 Panel {
   id: root
-  moduleName: "drivesync"
-  ipcTarget: "drivesync"
+  moduleName: "drive-sync"
+  ipcTarget: "drive-sync"
   manageIpc: false
 
   readonly property var status: sync.status

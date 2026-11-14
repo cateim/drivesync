@@ -125,14 +125,14 @@ int runStatusCommand(const QStringList &arguments, const BackendPaths &paths, QT
 }
 
 QString usageText() {
-    return "usage: drivesync [open]\n"
-           "       drivesync status [--json]\n"
-           "       drivesync sync [--json]\n"
-           "       drivesync pause [--minutes N | --until-tomorrow] [--json]\n"
-           "       drivesync resume [--json]\n"
-           "       drivesync takeover --check | --apply | --undo [--json]\n"
-           "       drivesync fix --start | --confirm | --answers <file.json> | --cancel | --retry [--json]\n"
-           "       drivesync deletes --list | --allow <count> [--json]\n"
-           "       drivesync run-condition | run | notify | watchdog | fix-run    (for the units)\n"
-           "       drivesync --help\n";
+    return "usage: drive-sync [open]\n"
+           "       drive-sync status [--json]\n"
+           "       drive-sync sync [--json]\n"
+           "       drive-sync pause [--minutes N | --until-tomorrow] [--json]\n"
+           "       drive-sync resume [--json]\n"
+           "       drive-sync takeover --check | --apply | --undo [--json]\n"
+           "       drive-sync fix --start | --confirm | --answers <file.json> | --cancel | --retry [--json]\n"
+           "       drive-sync deletes --list | --allow <count> [--json]\n"
+           "       drive-sync run-condition | run | notify | watchdog | fix-run    (for the units)\n"
+           "       drive-sync --help\n";
 }

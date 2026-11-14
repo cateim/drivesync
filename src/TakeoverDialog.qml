@@ -36,7 +36,7 @@ Popup {
         }
         Label {
             Layout.fillWidth: true
-            text: qsTr("DriveSync's own units will run the same rclone command, with the same remote, folder, filters and listings, so no resync is needed. These files move to ~/.local/share/drivesync/taken-over, nothing is deleted:")
+            text: qsTr("DriveSync's own units will run the same rclone command, with the same remote, folder, filters and listings, so no resync is needed. These files move to ~/.local/share/drive-sync/taken-over, nothing is deleted:")
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             color: "#c4c4cc"
@@ -52,7 +52,7 @@ Popup {
         }
         Label {
             Layout.fillWidth: true
-            text: qsTr("To go back: drivesync takeover --undo")
+            text: qsTr("To go back: drive-sync takeover --undo")
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             color: "#c4c4cc"

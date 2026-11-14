@@ -1,4 +1,4 @@
-pkgname=drivesync
+pkgname=drive-sync
 pkgver=0.1.0
 pkgrel=1
 pkgdesc='See how drive-sync is keeping ~/Drive and Google Drive in step'
@@ -6,10 +6,14 @@ arch=('x86_64' 'aarch64')
 license=('MIT')
 depends=('qt6-base' 'qt6-declarative' 'qt6-wayland' 'systemd' 'findutils' 'rclone' 'libnotify')
 makedepends=('gcc' 'make')
-# The app was called SyncWatch until 2026-11-11, and both packages ship the
-# same drive-sync units: pacman -U offers to remove syncwatch, and the first
-# drivesync command moves its folders under the home to the new name.
-conflicts=('syncwatch')
+# The app was called SyncWatch until 2026-11-11 and drivesync until 2026-11-14,
+# and every one of them ships the same drive-sync units: pacman -U offers to
+# remove the old package, and the first drive-sync command moves its folders
+# under the home to the new names.
+# TRANSITION ONLY for 'drivesync': the AUR has an unrelated drivesync (a Ruby
+# Google Drive client). Nothing here shares a file with it any more, so drop it
+# from conflicts before publishing this package anywhere.
+conflicts=('syncwatch' 'drivesync')
 replaces=('syncwatch')
 # A local app has no use for the split -debug package makepkg.conf asks for.
 options=('!debug')
@@ -23,10 +27,10 @@ build() {
 
 package() {
   cd "$startdir/.."
-  install -Dm755 build/drivesync "$pkgdir/usr/bin/drivesync"
+  install -Dm755 build/drive-sync "$pkgdir/usr/bin/drive-sync"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-  install -Dm644 assets/icons/drivesync.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/drivesync.svg"
-  install -Dm644 "$startdir/drivesync.desktop" "$pkgdir/usr/share/applications/drivesync.desktop"
+  install -Dm644 assets/icons/drive-sync.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/drive-sync.svg"
+  install -Dm644 "$startdir/drive-sync.desktop" "$pkgdir/usr/share/applications/drive-sync.desktop"
 
   # User units, inert until a takeover enables them: a unit of the same name
   # in ~/.config/systemd/user wins over these.
@@ -37,7 +41,7 @@ package() {
   # The bar widget. Omarchy loads third-party plugins only from
   # ~/.config/omarchy/plugins, which a package cannot write, so it lands here
   # and the app links it into the user's folder on first start.
-  local widget="$pkgdir/usr/share/drivesync/omarchy-plugin"
+  local widget="$pkgdir/usr/share/drive-sync/omarchy-plugin"
   install -Dm644 plugin/manifest.json plugin/DriveSync.qml plugin/DriveSyncService.qml \
     plugin/DriveSyncModel.js -t "$widget"
   install -Dm755 plugin/open-history.sh -t "$widget"

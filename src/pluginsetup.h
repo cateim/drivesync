@@ -13,19 +13,19 @@
 // Omarchy's shell.json is never edited here.
 
 struct PluginPaths {
-    QString shipped;       // /usr/share/drivesync/omarchy-plugin
+    QString shipped;       // /usr/share/drive-sync/omarchy-plugin
     QString userPlugins;   // ~/.config/omarchy/plugins
     QString omarchy;       // the omarchy command, empty when Omarchy is not there
     QString omarchyShell;  // omarchy-shell, to make the shell look for the new link
     QString declined;      // a file that says the user said no; empty never remembers
-    QString legacyShipped; // /usr/share/syncwatch/omarchy-plugin; empty skips the rename handling
+    QString legacyShipped; // /usr/share/drivesync/omarchy-plugin; empty skips the rename handling
 
     static PluginPaths defaults();
 };
 
-inline constexpr char kPluginId[] = "drivesync";
-// The same widget while the app was called SyncWatch, until 2026-11-11.
-inline constexpr char kLegacyPluginId[] = "syncwatch";
+inline constexpr char kPluginId[] = "drive-sync";
+// The same widget while the app was called drivesync, until 2026-11-14.
+inline constexpr char kLegacyPluginId[] = "drivesync";
 
 class PluginSetup : public QObject {
     Q_OBJECT
@@ -49,7 +49,7 @@ public:
     Q_INVOKABLE void accept();
     // Remembers "no", to the offer or to the notice that the path is taken:
     // later starts neither offer nor link the widget, so an
-    // `omarchy plugin remove drivesync` stays removed.
+    // `omarchy plugin remove drive-sync` stays removed.
     Q_INVOKABLE void decline();
 
 signals:

@@ -11,7 +11,7 @@
 #include "notifier.h"
 #include "syncconfig.h"
 
-// "drivesync fix": rebuilds the bisync base the way drive-sync.sh's resync
+// "drive-sync fix": rebuilds the bisync base the way drive-sync.sh's resync
 // did, with ~/Drive still in use (spec section 5). See fixstate.h for the
 // steps.
 
@@ -45,7 +45,7 @@ struct FixTools {
     static FixTools defaults();
 };
 
-// "drivesync fix --start | --confirm | --answers <file.json> | --cancel |
+// "drive-sync fix --start | --confirm | --answers <file.json> | --cancel |
 // --retry [--json]". --answers takes {"<path>": "cloud" | "notebook"}, and
 // every file the fix asked about must have one. systemctl is the one in paths.
 int runFixCommand(const QStringList &arguments, const BackendPaths &paths, QTextStream &out, QTextStream &err);
@@ -53,7 +53,7 @@ int runFixCommand(const QStringList &arguments, const BackendPaths &paths, QText
 // unit. Call it holding the FixLock. The error, or empty.
 QString retryFix(const BackendPaths &paths, const FixState &state);
 
-// "drivesync fix-run", the ExecStart of drive-sync-fix.service: runs the
+// "drive-sync fix-run", the ExecStart of drive-sync-fix.service: runs the
 // current step and the ones after it until the fix needs the user, fails or
 // ends. Returns 1 when a step failed. A config that cannot be read
 // (configError) fails the step.

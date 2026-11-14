@@ -6,4 +6,4 @@ Description=drive-sync: check that runs still happen
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/drivesync watchdog
+ExecStart=/usr/bin/drive-sync watchdog

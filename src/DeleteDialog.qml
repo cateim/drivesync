@@ -111,7 +111,7 @@ Popup {
         Label {
             visible: dialog.hidden > 0
             // The window holds 500; the command prints every one.
-            text: qsTr("And %Ln more.", "", dialog.hidden) + " " + qsTr("All of them: drivesync deletes --list")
+            text: qsTr("And %Ln more.", "", dialog.hidden) + " " + qsTr("All of them: drive-sync deletes --list")
             textFormat: Text.PlainText
             color: "#8a8a94"
             font.pixelSize: 12

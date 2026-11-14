@@ -10,18 +10,18 @@ set -uo pipefail
 
 # Address of an open DriveSync window, matched by the exact app_id only:
 # omarchy-launch-or-focus also matches titles, so a terminal open in a folder
-# called drivesync would take the focus instead.
-drivesync_window() {
+# called drive-sync would take the focus instead.
+app_window() {
   hyprctl clients -j 2>/dev/null \
-    | jq -r '.[] | select(.class == "drivesync") | .address' 2>/dev/null \
+    | jq -r '.[] | select(.class == "drive-sync") | .address' 2>/dev/null \
     | head -n1
 }
 
-address=$(drivesync_window)
+address=$(app_window)
 if [[ $address =~ ^0x[0-9a-f]+$ ]]; then
   # Same two forms omarchy-launch-or-focus tries (Lua config first).
   hyprctl dispatch "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null 2>&1 \
     || hyprctl dispatch focuswindow "address:$address" >/dev/null
 else
-  exec uwsm-app -- drivesync
+  exec uwsm-app -- drive-sync
 fi

@@ -17,7 +17,7 @@ struct SyncConfig {
     QString runOnlyWhen;      // a shell command; the run is skipped when it fails; empty runs always
 };
 
-// ~/.config/drivesync/config.json
+// ~/.config/drive-sync/config.json
 QString defaultSyncConfigPath();
 // Missing, unreadable, another version or a missing field: no config, and
 // error says which.

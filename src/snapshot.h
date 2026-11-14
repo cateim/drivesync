@@ -14,7 +14,7 @@
 #include "synclog.h"
 
 // One state of drive-sync, decided in one place. The window, the
-// "drivesync status" command and the bar widget all show what
+// "drive-sync status" command and the bar widget all show what
 // buildSnapshot() decides, so they can never disagree.
 
 // A normal run writes about 30 KB to the log, a resync a few MB; the tail
@@ -29,7 +29,7 @@ constexpr int kStateRuns = 1000000;
 // rclone renews its lock and prints stats every minute, so an open run with
 // nothing newer than this is no longer running.
 constexpr int kAliveSeconds = 150;
-// "drivesync fix" writes the next step and then asks systemd to start the
+// "drive-sync fix" writes the next step and then asks systemd to start the
 // unit: for this long an inactive unit is still starting, not a dead fix.
 constexpr int kFixStartGraceSeconds = 60;
 
@@ -109,7 +109,7 @@ struct Snapshot {
 };
 
 Snapshot buildSnapshot(const SnapshotSources &src);
-// Version 2 of the "drivesync status --json" contract (version 1 plus
+// Version 2 of the "drive-sync status --json" contract (version 1 plus
 // managed, paused and pausedUntil). Every key is always
 // present; times are Unix seconds, 0 when unknown. The bar widget reads it.
 QJsonObject snapshotToJson(const Snapshot &s, const QDateTime &nextRun, const QDateTime &now);

@@ -18,8 +18,8 @@ struct TakeoverPaths {
     QString userUnits;     // ~/.config/systemd/user
     QString binDir;        // ~/.local/bin
     QString oldStateDir;   // ~/.local/state/drive-sync
-    QString appConfigDir;  // ~/.config/drivesync
-    QString backupRoot;    // ~/.local/share/drivesync/taken-over
+    QString appConfigDir;  // ~/.config/drive-sync
+    QString backupRoot;    // ~/.local/share/drive-sync/taken-over
     QString systemctl;
     QString rclone;
     int serviceWaitMs = 20 * 60 * 1000;           // how long to wait for a run to end
@@ -61,7 +61,7 @@ bool copyFiltersWithMd5(const QString &from, const QString &to, QString *error);
 // carry no drop-in, wait for a run again, move the old filters last, enable
 // the packaged timers. The old filters stay in place until no unit can read
 // them any more, so a run started by hand halfway never finds them missing.
-// A lock file makes "drivesync sync" refuse while this runs. When a file
+// A lock file makes "drive-sync sync" refuse while this runs. When a file
 // cannot be moved back, the rollback stops there and leaves every timer off,
 // because starting the old ones without their filters would cost a resync.
 bool applyTakeover(const TakeoverPaths &paths, const TakeoverPlan &plan, const QDateTime &now, QString *error);
@@ -74,6 +74,6 @@ bool applyTakeover(const TakeoverPaths &paths, const TakeoverPlan &plan, const Q
 // which the old units would not honour.
 bool undoTakeover(const TakeoverPaths &paths, QString *error);
 
-// "drivesync takeover --check | --apply | --undo [--json]".
+// "drive-sync takeover --check | --apply | --undo [--json]".
 int runTakeoverCommand(const QStringList &arguments, const TakeoverPaths &paths, const BackendPaths &backend,
                        QTextStream &out, QTextStream &err);

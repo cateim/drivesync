@@ -68,7 +68,7 @@ QString at(const NotifierPaths &tools, const QDateTime &when) {
 int notify(const NotifierPaths &tools, const QString &urgency, const QString &icon, const QString &title,
            const QString &body) {
     QByteArray output;
-    runProcess(tools.notifySend, {"-p", "-a", "drivesync", "-u", urgency, "-i", icon, title, body}, kToolTimeoutMs,
+    runProcess(tools.notifySend, {"-p", "-a", "drive-sync", "-u", urgency, "-i", icon, title, body}, kToolTimeoutMs,
                &output, nullptr);
     return QString::fromUtf8(output).trimmed().toInt();
 }
@@ -246,7 +246,7 @@ void remindOfPause(const BackendPaths &paths, const NotifierPaths &tools, const 
     if (last.secsTo(now) < kPauseReminderSeconds)
         return;
     notify(tools, "normal", "dialog-information", tr("DriveSync is still paused"),
-           tr("Drive has been paused since %1. Resume it in DriveSync or with: drivesync resume")
+           tr("Drive has been paused since %1. Resume it in DriveSync or with: drive-sync resume")
                .arg(at(tools, since)));
     // notify-send can take seconds: a resume or a new pause in the meantime wins.
     const PauseMark current = readPause(file);

@@ -35,7 +35,7 @@ Rectangle {
         if (code === "filtersChanged") return qsTr("the filters changed since the last resync")
         if (code === "remoteMissing") return qsTr("rclone does not know the remote")
         if (code === "unreadableUnit") return qsTr("drive-sync.service runs something DriveSync cannot read")
-        if (code === "targetExists") return qsTr("~/.config/drivesync already has filters")
+        if (code === "targetExists") return qsTr("~/.config/drive-sync already has filters")
         if (code.startsWith("unknownDirective:")) return qsTr("drive-sync has %1, which DriveSync cannot keep").arg(name)
         if (code.startsWith("differentValue:")) return qsTr("%1 differs from DriveSync's unit").arg(name)
         return code

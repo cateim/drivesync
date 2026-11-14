@@ -134,7 +134,7 @@ public:
     Q_INVOKABLE void pauseUntilTomorrow();
     Q_INVOKABLE void pauseUntilResumed();
     Q_INVOKABLE void resume();
-    // "drivesync fix", step by step. answerFix takes "cloud" or "notebook"
+    // "drive-sync fix", step by step. answerFix takes "cloud" or "notebook"
     // for each question, in the order of fixQuestions, and hands them over
     // through <appState>/fix-answers.json. By position, not by name: a file
     // called "__proto__" or "constructor" would break a JavaScript object.
@@ -143,7 +143,7 @@ public:
     Q_INVOKABLE void answerFix(const QStringList &answers);
     Q_INVOKABLE void cancelFix();
     Q_INVOKABLE void retryFix();
-    // "drivesync deletes --allow <count>": count is what the user typed,
+    // "drive-sync deletes --allow <count>": count is what the user typed,
     // checked again by the command against the list in the log.
     Q_INVOKABLE void allowDeletes(int count);
     // Reads the config again after a takeover or an undo, so the window

@@ -9,19 +9,19 @@ DriveSync is an Omarchy desktop app (Qt 6, C++ and QML) that shows the state
 of `drive-sync`, the rclone bisync of `~/Drive` with Google Drive that runs
 from the `drive-sync.timer` user unit every 15 minutes, in a window, on the
 Omarchy bar (its widget ships in the package) and through
-`drivesync status --json`. It reads the rclone log, asks systemd, and looks
-for conflict copies. It writes its own state (`~/.local/state/drivesync/`),
+`drive-sync status --json`. It reads the rclone log, asks systemd, and looks
+for conflict copies. It writes its own state (`~/.local/state/drive-sync-app/`),
 the link to its bar widget, and, when the user accepts, the bar layout through
 `omarchy plugin`. Since step 2 it can take over a drive-sync made by
-`drive-sync.sh` (`drivesync takeover`): its packaged user units then run the
-same rclone command from `~/.config/drivesync/config.json`, and the window,
+`drive-sync.sh` (`drive-sync takeover`): its packaged user units then run the
+same rclone command from `~/.config/drive-sync/config.json`, and the window,
 the bar and the command line can sync now, pause and resume. Since step 3 it
-fixes a broken base (`F`, `drivesync fix`): a resync with the folder in use,
+fixes a broken base (`F`, `drive-sync fix`): a resync with the folder in use,
 run by `drive-sync-fix.service`, which only starts after the user confirms a
 dry run and touches single synced files only as the fix's comparison or the
 user's answers say. It never starts a resync or touches a synced file
 otherwise. Since step 5b, after `--max-delete` stopped a run, it lists what
-that run would delete (`D`, `drivesync deletes`) and lets one run through
+that run would delete (`D`, `drive-sync deletes`) and lets one run through
 with the guard raised once the user types how many files that is. The plan for growing it into the
 owner of drive-sync is `docs/superpowers/specs/2026-11-07-drive-sync-manager-design.md`; `docs/` is git-ignored,
 so that file exists only in the maintainer's working copy. The `drive-sync` scripts themselves live
@@ -30,6 +30,16 @@ in the DIY repository (`assets/omarchy/home/.local/bin/drive-sync.sh` and
 
 Built following the `omarchy-app` skill (`~/.claude/skills/omarchy-app/`):
 one window, one job, keyboard first, follows the Omarchy theme and language.
+
+**Names.** The product is shown as "DriveSync". Its machine names are
+`drive-sync` (package, `/usr/bin/drive-sync`, `/usr/share/drive-sync`, the
+`.desktop` file and Hyprland class, the bar widget id, `~/.config/drive-sync`,
+`~/.local/share/drive-sync`) and `drive-sync-app` for the state folder, because
+`drive-sync` is also what it manages: the units, `drive-sync.log` and the old
+`drive-sync.sh` and `drive-sync-aviso`. The AUR has an unrelated `drivesync`, so
+that name must never come back. Things named after the repository keep
+`drivesync` until the repository is renamed: `drivesync.pro`,
+`tests/drivesync_tests.*`, `fakeDrivesync` and the `action.drivesync` i18n key.
 
 ## Stack
 
@@ -42,7 +52,7 @@ one window, one job, keyboard first, follows the Omarchy theme and language.
 
 ```text
 drivesync.pro           qmake project
-bin/build               qmake6 + make into build/drivesync
+bin/build               qmake6 + make into build/drive-sync
 bin/test                builds and runs build/tests/drivesync_tests offscreen
 bin/install             bin/build, then makepkg -fsi with BUILDDIR/PKGDEST under build/
 bin/harness             builds tools/harness into build/harness and runs it with the given options
@@ -51,18 +61,18 @@ src/synclog.{h,cpp}     pure parser of the rclone bisync log into SyncRun record
 src/snapshot.{h,cpp}    buildSnapshot(): the one place the state is decided; tone; the JSON contract
 src/backend.{h,cpp}     the window's state: log watch, systemctl calls, conflict scan, headline rules (summarize)
 src/clockformat.{h,cpp}  12 or 24 hours, read from the Omarchy bar clock in shell.json
-src/conflictcache.{h,cpp}  conflict count shared through ~/.local/state/drivesync/conflicts.json
-src/statuscommand.{h,cpp}  `drivesync status [--json]`: same sources, read once, synchronously
+src/conflictcache.{h,cpp}  conflict count shared through ~/.local/state/drive-sync-app/conflicts.json
+src/statuscommand.{h,cpp}  `drive-sync status [--json]`: same sources, read once, synchronously
 src/syncconfig.{h,cpp}  the config a takeover writes; rclone arguments; filtersUsable (the md5 check)
-src/pausestate.{h,cpp}  the pause mark (~/.local/state/drivesync/paused.json) and "next 08:00"
+src/pausestate.{h,cpp}  the pause mark (~/.local/state/drive-sync-app/paused.json) and "next 08:00"
 src/controlcommands.{h,cpp}  sync, pause, resume, run-condition, run (execs rclone); runProcess
-src/fixstate.{h,cpp}    the fix's state machine in ~/.local/state/drivesync/fix.json (steps, questions)
-src/fixcommand.{h,cpp}  `drivesync fix` and `fix-run` (drive-sync-fix.service): dry run, base run, questions, final run
+src/fixstate.{h,cpp}    the fix's state machine in ~/.local/state/drive-sync-app/fix.json (steps, questions)
+src/fixcommand.{h,cpp}  `drive-sync fix` and `fix-run` (drive-sync-fix.service): dry run, base run, questions, final run
 src/listingdiff.{h,cpp}  reads bisync's .lst listings (Go %q names) and compares both sides, as drive-sync.sh did
-src/blockeddeletes.{h,cpp}  a max-delete stop: its deletions from the log, the one-run mark (allow-deletes.json), the raised guard, `drivesync deletes`
-src/legacymigration.{h,cpp}  moves SyncWatch's folders to the DriveSync names; first thing main() does
+src/blockeddeletes.{h,cpp}  a max-delete stop: its deletions from the log, the one-run mark (allow-deletes.json), the raised guard, `drive-sync deletes`
+src/legacymigration.{h,cpp}  moves the SyncWatch and drivesync folders to the drive-sync names (state to drive-sync-app); first thing main() does
 src/notifier.{h,cpp}    notify (ExecStopPost) and watchdog: the port of drive-sync-aviso
-src/takeover.{h,cpp}    detect, apply with rollback, undo; `drivesync takeover`
+src/takeover.{h,cpp}    detect, apply with rollback, undo; `drive-sync takeover`
 src/takeoversetup.{h,cpp}  the window's side of a takeover, through a child process
 src/pluginsetup.{h,cpp} links the shipped bar widget and enables it through `omarchy plugin`
 src/theme.{h,cpp}       Omarchy accent and Hyprland rounding (from the skill template)
@@ -85,7 +95,7 @@ src/format.js           relative times, durations, sizes
 src/i18n/*.json         en (plural forms only) and pt-BR
 tests/                  Qt Test suite
 tools/harness/          offscreen harness: the real Main.qml over a made-up drive-sync, saved as a PNG
-plugin/                 Omarchy bar widget (id drivesync), installed to /usr/share/drivesync/omarchy-plugin; reads `drivesync status --json`
+plugin/                 Omarchy bar widget (id drive-sync), installed to /usr/share/drive-sync/omarchy-plugin; reads `drive-sync status --json`
 docs/superpowers/       git-ignored, local only: design (specs/) and step plans (plans/)
 pkgbuild/               PKGBUILD, .desktop, units/ (drive-sync, drive-sync-watchdog and drive-sync-fix user units, /usr/lib/systemd/user)
 assets/icons/           launcher icon, installed by the PKGBUILD
@@ -96,20 +106,20 @@ assets/images/          README pictures: window-*.png from bin/harness over a ma
 
 ```sh
 bin/build            # about 30 s from clean
-bin/test             # 197 cases, about 14 s (four run real rclone on temp folders)
+bin/test             # 201 cases, about 14 s (four run real rclone on temp folders)
 bin/install          # needs sudo (pacman -U); run it in a real terminal
 bin/harness --scenario running --clock "h:mm AP" --out build/shot.png   # the window offscreen, made-up data; options atop tools/harness/harness.cpp
 makepkg -f           # from pkgbuild/, with BUILDDIR and PKGDEST set as in bin/install, to check packaging without sudo
-build/drivesync status --json   # the state as the bar sees it (0.13 s with a fresh conflict cache)
+build/drive-sync status --json   # the state as the bar sees it (0.13 s with a fresh conflict cache)
 (cd plugin && node --test tests/*.test.mjs)   # bar widget, 24 cases; the glob is required on Node 22
-build/drivesync takeover --check              # read-only: what a takeover would move, or what blocks it
+build/drive-sync takeover --check              # read-only: what a takeover would move, or what blocks it
 omarchy plugin validate plugin                # needs the folder path, not the plugin id
 ```
 
 ## How the state is decided
 
 `buildSnapshot()` (`src/snapshot.cpp`, pure, tested) is the only place: the
-window's `Backend`, `drivesync status` and, through its JSON, the bar widget
+window's `Backend`, `drive-sync status` and, through its JSON, the bar widget
 all show what it decides. It finds the running run, the last success, the
 last run, `failingSince`, `canSyncNow` and the `tone` (`ok`, `busy`,
 `warning`, `error`), and calls `Backend::summarize`, which picks one
@@ -165,8 +175,8 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
 - A run `--max-delete` stopped is `causeKind` `maxDelete` (spec 5b). Its
   deletions come from its own log lines (`blockedDeletes`, only when it is
   the newest run), so the headline, the card and `D` count both sides.
-  `drivesync deletes --allow <count>` (the count of that list, typed by the
-  user) writes `allow-deletes.json`; the next `drivesync run` (or the fix's
+  `drive-sync deletes --allow <count>` (the count of that list, typed by the
+  user) writes `allow-deletes.json`; the next `drive-sync run` (or the fix's
   final run, when that is what stopped) takes it, removes it, and dry-runs
   the plan with `--max-delete` raised to `ceil(100 * larger side / total)`
   into `allowed-dry-run.log`. The mark names the stopped run's start, and it
@@ -205,22 +215,36 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
 
 ## Gotchas
 
-- **The app was SyncWatch until 2026-11-11.** `main()` first calls
-  `migrateFromSyncWatch()`, which renames `~/.config/syncwatch`,
-  `~/.local/state/syncwatch` and `~/.local/share/syncwatch` to `drivesync`
-  and rewrites the paths inside `config.json` and every
-  `taken-over/*/manifest.json`. So running `build/drivesync` with any argument
-  migrates the real home: never do it while the installed binary is still the
-  old `syncwatch`, which would then lose its config. `PluginSetup` swaps the
-  `syncwatch` widget for `drivesync` on the bar by itself (`enable drivesync
-  --after syncwatch`, then `disable syncwatch`, then it removes the dangling
-  link), and the PKGBUILD `conflicts`/`replaces` `syncwatch`. Keep the old
-  names only in those places and in `takeoverLockHeld`.
+- **The app was SyncWatch until 2026-11-11 and drivesync until 2026-11-14.**
+  `main()` first calls `migrateFromLegacyNames()`, which renames
+  `~/.config/{drivesync,syncwatch}` and `~/.local/share/{drivesync,syncwatch}`
+  to `drive-sync`, and `~/.local/state/{drivesync,syncwatch}` to
+  `drive-sync-app`, and rewrites the paths inside `config.json` and every
+  `taken-over/*/manifest.json`. The newer old name wins when both exist.
+  So running `build/drive-sync` with any argument migrates the real home:
+  never do it while the installed binary is still the old `drivesync`, which
+  would then lose its config (test in a copied HOME instead: copy the three
+  folders into a temp dir, rewrite the home in the copied JSON, run with
+  `HOME=<dir>`). `PluginSetup` swaps the `drivesync` widget for `drive-sync`
+  on the bar by itself (`enable drive-sync --after drivesync`, then `disable
+  drivesync`, then it removes the dangling link). The PKGBUILD
+  `conflicts`/`replaces` `syncwatch` and `conflicts` `drivesync`; drop the
+  last one before publishing, because that name belongs to another project.
+  Keep the old names only in those places, in `takeoverLockHeld` and in the
+  tests of them.
+- **`~/.local/state/drive-sync` is the old drive-sync.sh's**, not the app's: it
+  holds the resync pause mark (`BackendPaths::stateDir`), and a takeover moves
+  it aside whole. The app's own state therefore lives in
+  `~/.local/state/drive-sync-app`; never put app files in the other one.
+- **"drive-sync" is a substring of the legacy script names** (`drive-sync.sh`,
+  `drive-sync-aviso`, the units' command lines). Never match the app by
+  `contains("drive-sync")`: `takeoverLockHeld` reads the exact name of
+  `argv[0]`, and the legacy checks match by exact file name.
 
 - **A bisync run with the filters' `.md5` missing or stale destroys its base.**
   Tried with rclone 1.75 on 2026-11-08: the run stops with a critical error and
   renames the listings to `-err`, and from then on even the right filters fail
-  until a resync. So `drivesync run` checks `filtersUsable` before it execs
+  until a resync. So `drive-sync run` checks `filtersUsable` before it execs
   rclone, the takeover copies the filters with their `.md5`, and no byte of the
   filters (comments included) may change outside a flow that resyncs. The fix
   is that flow: edit `filters.txt`, then `F`; runs are refused until it ends.
@@ -261,9 +285,9 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
 - **The repo lives under `~/Drive`**, mirrored by drive-sync. Its filters skip
   `/GitHub/**/build/**`, so every build output (qmake, tests, makepkg) goes
   under `build/`. Do not let makepkg write `pkgbuild/src` or `pkgbuild/pkg`.
-- **The bar widget depends on two names.** It runs `drivesync status --json`
+- **The bar widget depends on two names.** It runs `drive-sync status --json`
   from the PATH, and its `W` key (`plugin/open-history.sh`) focuses the window
-  whose Hyprland class is exactly `drivesync`. Renaming the binary or changing
+  whose Hyprland class is exactly `drive-sync`. Renaming the binary or changing
   `setDesktopFileName` breaks it, so change the widget in the same commit.
 - `QString::arg` reads `%1000` as placeholder `%10`: build microsecond values
   as numbers, never by appending zeros after `%1`.
@@ -271,7 +295,7 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
   `compile_commands.json`; the qmake build is the truth.
 - Looking at the window without touching the desktop: `bin/harness` loads
   `qrc:/Main.qml` offscreen with fake `BackendPaths` (a made-up log, Drive,
-  state dir, a fake `systemctl`), a fake `omarchy`, a fake `drivesync` for
+  state dir, a fake `systemctl`), a fake `omarchy`, a fake `drive-sync` for
   the takeover check and a fake shell.json clock, presses `--keys`, and
   saves `window->grabWindow()`; QML warnings go to stderr. It is how the
   README window pictures are made, so it must never read this machine:
@@ -286,10 +310,10 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
 - Omarchy loads third-party plugins only from `~/.config/omarchy/plugins/<id>/`
   (`PluginRegistry.qml` scans `"$dir"/*/`, which follows a symlink). A pacman
   package cannot install there, so `PluginSetup` links
-  `~/.config/omarchy/plugins/drivesync` to the package's copy and, after the
-  user agrees (`B`), runs `omarchy plugin enable drivesync`. A folder or a
+  `~/.config/omarchy/plugins/drive-sync` to the package's copy and, after the
+  user agrees (`B`), runs `omarchy plugin enable drive-sync`. A folder or a
   foreign link at that path is never touched.
-  `N` says no and is remembered in `~/.local/state/drivesync/bar-declined`:
+  `N` says no and is remembered in `~/.local/state/drive-sync-app/bar-declined`:
   no offer and no new link afterwards, so a removal stays removed. `N` also
   hides the "blocked" notice (someone else's folder or link at that path)
   the same way. A failed `omarchy plugin list` before the user pressed `B`
@@ -297,35 +321,35 @@ headline leaves out goes to `warnings`: `timerOff`, `timerDisabled`,
 - A package upgrade reaches the bar only after a shell reload
   (`omarchy restart shell`): the plugin watcher's inotify does not follow the
   link into `/usr/share`.
-- `omarchy plugin validate ~/.config/omarchy/plugins/drivesync` rejects the
+- `omarchy plugin validate ~/.config/omarchy/plugins/drive-sync` rejects the
   link ("symlinks are not allowed inside a plugin folder"); validate
   `plugin/`, or the link with a trailing slash.
 - Never link `plugin/` from the repo by hand before installing the matching
-  binary: an older `drivesync` has no `status` command and opens its window
+  binary: an older `drive-sync` has no `status` command and opens its window
   instead of answering, every poll, until the 45 s watchdog stops it.
 - Any file written under `~/.config/omarchy/plugins/` hot-reloads the plugin;
   for a few seconds the icon shows the unknown state. Every reload also logs
   "ShellIpc ... another handler is registered"; IPC keeps answering.
 - The IPC function cannot be named `sync`: it collides with the
   `DriveSyncService` id. It is `syncNow()`, and it checks `canSyncNow` first.
-- `drivesync status --json` output is parsed in
+- `drive-sync status --json` output is parsed in
   `StdioCollector.onStreamFinished`, never in `onExited`: the two have no
   fixed order. A binary that fails to start ends the process without ending
   the stream or emitting `exited`, so `onRunningChanged` applies an empty
   answer when nothing streamed, and a 45 s watchdog stops a poll that never
   ends: both show unknown, never the last good snapshot. Only a source-level
-  test covers this; the live check is opening the panel with `drivesync`
+  test covers this; the live check is opening the panel with `drive-sync`
   missing.
 - Every QML `Text` sets `textFormat: Text.PlainText` (a test enforces it):
   `causeDetail` comes from the log, which is untrusted, and `cleanText` caps
   it at 200 characters on one line.
-- `open-history.sh` finds the window by exact class `drivesync`, because
+- `open-history.sh` finds the window by exact class `drive-sync`, because
   `omarchy-launch-or-focus` also matches titles.
 
 ## Deploy
 
 Local only: `bin/install` installs the package with pacman, which puts
-`/usr/bin/drivesync`, the `.desktop` entry, the icon and the bar widget in
+`/usr/bin/drive-sync`, the `.desktop` entry, the icon and the bar widget in
 place, so it shows up in the Omarchy launcher. The DIY repository records it in
 `docs/omarchy.md` (packages built from a local repository). Bump `pkgver` in
 `pkgbuild/PKGBUILD` and `app.setApplicationVersion` in `src/main.cpp`

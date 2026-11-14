@@ -1,7 +1,7 @@
 .pragma library
 
 // Pure logic of the DriveSync bar widget. The state itself is decided by the
-// app (`drivesync status --json`); this file only checks what the app printed
+// app (`drive-sync status --json`); this file only checks what the app printed
 // and turns it into what the bar shows. No QML here, so node:test covers it.
 
 var MAX_ERROR_LENGTH = 200
@@ -60,7 +60,7 @@ function cleanText(value) {
   return text
 }
 
-// What `drivesync status --json` printed, checked field by field. Output that
+// What `drive-sync status --json` printed, checked field by field. Output that
 // is not version 2 of the contract, or has no clock, is not a snapshot.
 function parseSnapshot(raw) {
   var data = null

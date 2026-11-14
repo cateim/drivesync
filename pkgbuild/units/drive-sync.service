@@ -10,10 +10,10 @@ Type=oneshot
 # (a normal run takes about 8 min).
 TimeoutStartSec=2h
 # Skips the run while paused, or when the config's runOnlyWhen fails.
-ExecCondition=/usr/bin/drivesync run-condition
+ExecCondition=/usr/bin/drive-sync run-condition
 # Checks the filters' md5 first, then becomes rclone.
-ExecStart=/usr/bin/drivesync run
+ExecStart=/usr/bin/drive-sync run
 # Notifies when a run fails, and when runs work again.
-ExecStopPost=-/usr/bin/drivesync notify
+ExecStopPost=-/usr/bin/drive-sync notify
 Nice=10
 IOSchedulingClass=idle

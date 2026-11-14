@@ -222,7 +222,7 @@ void printList(const std::optional<BlockedDeletes> &blocked, QTextStream &out) {
     }
     if (blocked->list.size() < blocked->count)
         out << QString("(the first %1 of %2)\n").arg(blocked->list.size()).arg(blocked->count);
-    out << QString("To let one run delete them: drivesync deletes --allow %1\n").arg(blocked->count);
+    out << QString("To let one run delete them: drive-sync deletes --allow %1\n").arg(blocked->count);
 }
 
 // The checks, the mark, then the run that uses it.
@@ -234,13 +234,13 @@ QString allowDeletes(const BackendPaths &paths, const std::optional<BlockedDelet
     const QDateTime now = QDateTime::currentDateTimeUtc();
     const PauseMark pause = readPause(pauseFilePath(paths.appState));
     if (pause.present && !pauseEnded(pause, now))
-        return "drive-sync is paused; run drivesync resume first";
+        return "drive-sync is paused; run drive-sync resume first";
     if (!blocked)
         return "nothing is held back: the last run did not stop at the max-delete guard";
     if (blocked->guardTotal <= 0)
         return "the max-delete line of the last run cannot be read";
     if (count != blocked->count)
-        return QString("the last run would delete %1 files, not %2; see them with drivesync deletes --list")
+        return QString("the last run would delete %1 files, not %2; see them with drive-sync deletes --list")
             .arg(blocked->count)
             .arg(count);
     AllowDeletes allow;
@@ -276,7 +276,7 @@ int runDeletesCommand(const QStringList &arguments, const BackendPaths &paths, Q
     bool countOk = false;
     const int count = rest.size() == 2 && rest.at(0) == "--allow" ? rest.at(1).toInt(&countOk) : 0;
     if (!list && (!countOk || count <= 0))
-        return commandAnswer(json, "usage: drivesync deletes --list | --allow <count> [--json]", out, err);
+        return commandAnswer(json, "usage: drive-sync deletes --list | --allow <count> [--json]", out, err);
     // The window shows 500 paths; printed here, every one of them is.
     const auto blocked = blockedDeletes(SyncLog::readRecent(paths.log, kTailBytes),
                                         list && !json ? std::numeric_limits<int>::max() : kListLimit);

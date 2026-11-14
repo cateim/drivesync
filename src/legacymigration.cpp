@@ -38,7 +38,7 @@ QJsonValue renamed(const QJsonValue &value, const QList<LegacyFolder> &folders, 
     return value;
 }
 
-// Another drivesync process (the bar polls every few seconds while a timer
+// Another drive-sync process (the bar polls every few seconds while a timer
 // tick starts) may move the same thing first: a source that is gone after a
 // failed rename is that, not a problem.
 bool moveOrGone(const QString &from, const QString &to) {
@@ -64,9 +64,17 @@ QStringList mergeInto(const QString &from, const QString &to) {
 }  // namespace
 
 QList<LegacyFolder> legacyFolders(const QString &home) {
+    struct Target {
+        const char *base;
+        const char *name;
+    };
+    const Target targets[] = {{"/.config", "drive-sync"},
+                              {"/.local/state", "drive-sync-app"},
+                              {"/.local/share", "drive-sync"}};
     QList<LegacyFolder> folders;
-    for (const QString &base : {"/.config", "/.local/state", "/.local/share"})
-        folders.append({home + base + "/syncwatch", home + base + "/drivesync"});
+    for (const char *oldName : {"drivesync", "syncwatch"})
+        for (const Target &target : targets)
+            folders.append({home + target.base + "/" + oldName, home + target.base + "/" + target.name});
     return folders;
 }
 
@@ -123,13 +131,13 @@ QStringList rewriteLegacyPaths(const QList<LegacyFolder> &folders, const QString
     return problems;
 }
 
-QStringList migrateFromSyncWatch(const QString &home) {
+QStringList migrateFromLegacyNames(const QString &home) {
     const QList<LegacyFolder> folders = legacyFolders(home);
     QStringList problems = moveLegacyFolders(folders);
     // The config names its filters; each manifest names where the takeover put
     // the old files, which is where an undo looks for them.
-    QStringList jsonFiles{home + "/.config/drivesync/config.json"};
-    const QString backupRoot = home + "/.local/share/drivesync/taken-over";
+    QStringList jsonFiles{home + "/.config/drive-sync/config.json"};
+    const QString backupRoot = home + "/.local/share/drive-sync/taken-over";
     for (const QString &backup : QDir(backupRoot).entryList(QDir::Dirs | QDir::NoDotAndDotDot))
         jsonFiles << backupRoot + "/" + backup + "/manifest.json";
     problems << rewriteLegacyPaths(folders, jsonFiles);

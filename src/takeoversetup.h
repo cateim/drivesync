@@ -5,7 +5,7 @@
 #include <QStringList>
 #include <QTimer>
 
-// The window's side of a takeover. It runs "drivesync takeover" as a child
+// The window's side of a takeover. It runs "drive-sync takeover" as a child
 // process, so a slow systemctl or the wait for a run to end never blocks the
 // window, and keeps what the window shows.
 class TakeoverSetup : public QObject {

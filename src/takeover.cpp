@@ -151,13 +151,13 @@ TakeoverPaths TakeoverPaths::defaults() {
     return {home + "/.config/systemd/user",
             home + "/.local/bin",
             home + "/.local/state/drive-sync",
-            home + "/.config/drivesync",
-            home + "/.local/share/drivesync/taken-over",
+            home + "/.config/drive-sync",
+            home + "/.local/share/drive-sync/taken-over",
             QStandardPaths::findExecutable("systemctl"),
             QStandardPaths::findExecutable("rclone"),
             20 * 60 * 1000,
             "/usr/lib/systemd/user",
-            home + "/.local/state/drivesync"};
+            home + "/.local/state/drive-sync-app"};
 }
 
 TakeoverPlan detectTakeover(const TakeoverPaths &paths, const Snapshot &snapshot) {
@@ -202,7 +202,7 @@ TakeoverPlan detectTakeover(const TakeoverPaths &paths, const Snapshot &snapshot
     if (readable && conditions.size() == 1)
         readable = readExecCondition(conditions.first(), &plan.config);
     for (const QString &stopPost : stopPosts)
-        // The old notifier is replaced by "drivesync notify"; anything else would be lost.
+        // The old notifier is replaced by "drive-sync notify"; anything else would be lost.
         if (QFileInfo(QProcess::splitCommand(withoutExecPrefix(stopPost)).value(0)).fileName() != "drive-sync-aviso")
             plan.blockers << "unknownDirective:ExecStopPost";
 
@@ -250,7 +250,7 @@ TakeoverPlan detectTakeover(const TakeoverPaths &paths, const Snapshot &snapshot
     }
 
     // A drop-in applies to the packaged unit of the same name too, and one
-    // with its own ExecStart would bypass "drivesync run" and its md5 check.
+    // with its own ExecStart would bypass "drive-sync run" and its md5 check.
     for (const QString &dir : {paths.userUnits, paths.systemUserUnits})
         for (const QString &unitName : {QString("drive-sync.service"), QString("drive-sync.timer")})
             if (QFileInfo(dir + "/" + unitName + ".d").isDir())
@@ -500,7 +500,7 @@ bool applyTakeover(const TakeoverPaths &paths, const TakeoverPlan &plan, const Q
         *error = plan.blockers.isEmpty() ? QString("nothing to take over") : plan.blockers.join(", ");
         return false;
     }
-    // "drivesync sync" and an undo refuse while this lock is held.
+    // "drive-sync sync" and an undo refuse while this lock is held.
     if (!takeLock(paths.appState, error))
         return false;
     const auto unlock = qScopeGuard([&] { releaseLock(paths.appState); });
@@ -661,7 +661,7 @@ bool undoTakeover(const TakeoverPaths &paths, QString *error) {
     // The old units know nothing of a fix: going back halfway would leave
     // its base run or its questions to a drive-sync that cannot finish them.
     if (fixPresent(paths.appState)) {
-        *error = "a fix is under way; finish it or cancel it (drivesync fix --cancel) first";
+        *error = "a fix is under way; finish it or cancel it (drive-sync fix --cancel) first";
         return false;
     }
     if (!takeLock(paths.appState, error))
@@ -790,7 +790,7 @@ int runTakeoverCommand(const QStringList &arguments, const TakeoverPaths &paths,
     QStringList rest = arguments;
     const bool json = rest.removeAll("--json") > 0;
     if (rest.size() != 1 || !QStringList{"--check", "--apply", "--undo"}.contains(rest.first())) {
-        err << "usage: drivesync takeover --check | --apply | --undo [--json]\n";
+        err << "usage: drive-sync takeover --check | --apply | --undo [--json]\n";
         return 1;
     }
     const QString action = rest.first();
@@ -822,7 +822,7 @@ int runTakeoverCommand(const QStringList &arguments, const TakeoverPaths &paths,
         if (plan.state == "found")
             out << "runs: rclone " << rcloneRunArguments(plan.config).join(' ') << "\n";
     } else if (!ok) {
-        err << "drivesync: " << error << "\n";
+        err << "drive-sync: " << error << "\n";
     }
     out.flush();
     err.flush();

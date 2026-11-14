@@ -7,7 +7,7 @@
 #include "backend.h"
 #include "snapshot.h"
 
-// "drivesync status": the state of drive-sync without a window, for the bar
+// "drive-sync status": the state of drive-sync without a window, for the bar
 // widget and scripts. It reads the same sources as the window, but waits for
 // each answer instead of watching, and decides with the same buildSnapshot().
 

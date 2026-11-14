@@ -11,12 +11,12 @@
 #include <QTimer>
 
 PluginPaths PluginPaths::defaults() {
-    return {"/usr/share/drivesync/omarchy-plugin",
+    return {"/usr/share/drive-sync/omarchy-plugin",
             QDir::homePath() + "/.config/omarchy/plugins",
             QStandardPaths::findExecutable("omarchy"),
             QStandardPaths::findExecutable("omarchy-shell"),
-            QDir::homePath() + "/.local/state/drivesync/bar-declined",
-            "/usr/share/syncwatch/omarchy-plugin"};
+            QDir::homePath() + "/.local/state/drive-sync-app/bar-declined",
+            "/usr/share/drivesync/omarchy-plugin"};
 }
 
 PluginSetup::PluginSetup(const PluginPaths &paths, QObject *parent) : QObject(parent), m_paths(paths) {}
@@ -115,8 +115,9 @@ void PluginSetup::accept() {
     });
 }
 
-// The link SyncWatch made, now dangling: pacman removed /usr/share/syncwatch
-// with the old package, so the shell no longer lists that widget.
+// The link the drivesync package made, now dangling: pacman removed
+// /usr/share/drivesync with the old package, so the shell no longer lists that
+// widget.
 bool PluginSetup::legacyLinked() const {
     if (m_legacyTried || m_paths.legacyShipped.isEmpty())
         return false;
@@ -124,8 +125,8 @@ bool PluginSetup::legacyLinked() const {
     return link.isSymLink() && link.symLinkTarget() == m_paths.legacyShipped;
 }
 
-// The user had put SyncWatch's widget on the bar, and DriveSync's is the same
-// widget renamed, so it takes the old one's place without asking again. The
+// The user had put the drivesync widget on the bar, and drive-sync's is the
+// same widget renamed, so it takes the old one's place without asking again. The
 // old entry goes only after the new one is in, and its link with it. An
 // enable that fails means the old widget was not on the bar: nothing to
 // replace, and the usual offer follows.

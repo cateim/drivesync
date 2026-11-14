@@ -28,13 +28,13 @@ struct NotifierPaths {
     static NotifierPaths defaults(const QLocale &locale);
 };
 
-// "drivesync notify", the ExecStopPost of drive-sync.service, with systemd's
+// "drive-sync notify", the ExecStopPost of drive-sync.service, with systemd's
 // $SERVICE_RESULT. Always returns 0: a notification that cannot be shown
 // must not turn a good run into a failed unit.
 int runNotifyCommand(const QString &serviceResult, const BackendPaths &paths, const NotifierPaths &tools,
                      const QDateTime &now);
 
-// "drivesync watchdog", from drive-sync-watchdog.timer every hour. A config
+// "drive-sync watchdog", from drive-sync-watchdog.timer every hour. A config
 // that cannot be read (configError) is the problem it reports.
 int runWatchdogCommand(const BackendPaths &paths, const SyncConfig &config, const NotifierPaths &tools,
                        const QDateTime &now, const QString &configError = {});

@@ -119,17 +119,19 @@ QByteArray readBytes(const QString &path) {
     return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
 }
 
-// A home the way SyncWatch left it after a takeover: config with its filters
-// and .md5, a pause mark, and one backup whose manifest names its own folder.
+// A home the way an earlier name of the app (SyncWatch, then drivesync) left it
+// after a takeover: config with its filters and .md5, a pause mark, and one
+// backup whose manifest names its own folder.
 struct LegacyHome {
     QString home;
     QByteArray filters = "- .git/**\n- node_modules/**\n";
+    QString name = "syncwatch";
 };
 
 bool makeLegacyHome(LegacyHome &legacy) {
-    const QString config = legacy.home + "/.config/syncwatch";
-    const QString backup = legacy.home + "/.local/share/syncwatch/taken-over/20261110-224919";
-    if (!QDir().mkpath(config) || !QDir().mkpath(legacy.home + "/.local/state/syncwatch")
+    const QString config = legacy.home + "/.config/" + legacy.name;
+    const QString backup = legacy.home + "/.local/share/" + legacy.name + "/taken-over/20261110-224919";
+    if (!QDir().mkpath(config) || !QDir().mkpath(legacy.home + "/.local/state/" + legacy.name)
         || !QDir().mkpath(backup + "/bin"))
         return false;
     SyncConfig sync;
@@ -148,7 +150,7 @@ bool makeLegacyHome(LegacyHome &legacy) {
     return saveSyncConfig(config + "/config.json", sync, &error) && write(sync.filtersFile, legacy.filters)
            && write(sync.filtersFile + ".md5",
                     QCryptographicHash::hash(legacy.filters, QCryptographicHash::Md5).toHex())
-           && write(legacy.home + "/.local/state/syncwatch/paused.json", "{}")
+           && write(legacy.home + "/.local/state/" + legacy.name + "/paused.json", "{}")
            && write(backup + "/bin/drive-sync.sh", "#!/bin/sh\n")
            && write(backup + "/manifest.json", QJsonDocument(manifest).toJson());
 }
@@ -217,6 +219,17 @@ PluginPaths fakeOmarchy(const QString &dir, const QByteArray &list) {
     return {dir + "/shipped", dir + "/plugins", dir + "/omarchy", dir + "/omarchy-shell"};
 }
 
+// A live process whose argv[0] is dir/<name>, which is what the takeover lock
+// check reads. It sleeps; the caller kills it.
+bool startNamedHolder(QProcess &holder, const QString &dir, const QString &name) {
+    const QString program = dir + "/" + name;
+    const QString sleepTool = QStandardPaths::findExecutable("sleep");
+    if (sleepTool.isEmpty() || !QFile::link(sleepTool, program))
+        return false;
+    holder.start(program, {"30"});
+    return holder.waitForStarted();
+}
+
 QStringList calls(const QString &dir) {
     QFile file(dir + "/calls.log");
     if (!file.open(QIODevice::ReadOnly))
@@ -250,7 +263,7 @@ SyncConfig oldUnitConfig() {
     config.remote = "gdrive:";
     config.localPath = "/home/someone/Drive";
     config.workDir = "/home/someone/.local/state/rclone/bisync";
-    config.filtersFile = "/home/someone/.config/drivesync/filters.txt";
+    config.filtersFile = "/home/someone/.config/drive-sync/filters.txt";
     config.logFile = "/home/someone/.local/state/drive-sync.log";
     config.rcloneFlags = {"--drive-skip-gdocs", "--drive-skip-shortcuts", "--resilient", "--recover",
                           "--max-lock", "2m", "--max-delete", "5", "--conflict-resolve", "newer",
@@ -427,7 +440,7 @@ FixSetup makeFixSetup(const QString &dir) {
     return s;
 }
 
-// Runs "drivesync fix <arguments> --json" and returns its error, empty when ok.
+// Runs "drive-sync fix <arguments> --json" and returns its error, empty when ok.
 QString fixCommand(const FixSetup &s, const QStringList &arguments) {
     QString output;
     QString errors;
@@ -437,7 +450,7 @@ QString fixCommand(const FixSetup &s, const QStringList &arguments) {
     return QJsonDocument::fromJson(output.toUtf8()).object().value("error").toString("no JSON answer");
 }
 
-// Runs "drivesync deletes <arguments> --json" and returns its answer.
+// Runs "drive-sync deletes <arguments> --json" and returns its answer.
 QJsonObject deletesCommand(const BackendPaths &paths, const QStringList &arguments) {
     QString output;
     QString errors;
@@ -553,9 +566,9 @@ OldSetup makeOldSetup(const QString &root) {
                           "[ \"$1\" = listremotes ] && echo gdrive:\nexit 0\n").arg(root).toUtf8());
     QFile::setPermissions(rclone, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
     o.paths = {o.home + "/.config/systemd/user", o.home + "/.local/bin", o.home + "/.local/state/drive-sync",
-               o.home + "/.config/drivesync", o.home + "/.local/share/drivesync/taken-over",
+               o.home + "/.config/drive-sync", o.home + "/.local/share/drive-sync/taken-over",
                recordingSystemctl(root), rclone};
-    o.paths.appState = o.home + "/.local/state/drivesync";
+    o.paths.appState = o.home + "/.local/state/drive-sync-app";
     o.paths.systemUserUnits = root + "/etc-systemd-user";
     return o;
 }
@@ -614,13 +627,13 @@ QStringList systemctlCalls(const QString &dir) {
     return found;
 }
 
-// A drivesync that appends its arguments to calls.log and answers with
+// A drive-sync that appends its arguments to calls.log and answers with
 // answer.json for "takeover", or fails "sync" when told to.
 QString fakeDrivesync(const QString &dir, const QByteArray &takeoverAnswer, bool syncFails = false) {
     write(dir + "/answer.json", takeoverAnswer);
-    const QString path = dir + "/drivesync";
+    const QString path = dir + "/drive-sync";
     write(path, QString("#!/bin/sh\n"
-                        "echo \"drivesync $*\" >> '%1/calls.log'\n"
+                        "echo \"drive-sync $*\" >> '%1/calls.log'\n"
                         "case \"$1\" in\n"
                         "  takeover) cat '%1/answer.json' ;;\n"
                         "  sync) %2 ;;\n"
@@ -1141,7 +1154,7 @@ private slots:
         QCOMPARE(s.lastSuccess, src.runs.at(0).end);
     }
 
-    // Version 1 of what "drivesync status --json" prints: every key always
+    // Version 1 of what "drive-sync status --json" prints: every key always
     // there, times as Unix seconds, 0 when unknown.
     void statusJsonContract()
     {
@@ -1278,7 +1291,7 @@ private slots:
         QString out, err;
         QTextStream o(&out), e(&err);
         QCOMPARE(runStatusCommand({"--jsno"}, BackendPaths{}, o, e), 1);
-        QVERIFY(err.contains("usage: drivesync"));
+        QVERIFY(err.contains("usage: drive-sync"));
         QVERIFY(out.isEmpty());
     }
 
@@ -1308,7 +1321,7 @@ private slots:
         PluginSetup setup(paths);
         setup.check();
         QTRY_COMPARE(setup.state(), QString("offer"));
-        const QFileInfo link(paths.userPlugins + "/drivesync");
+        const QFileInfo link(paths.userPlugins + "/drive-sync");
         QVERIFY(link.isSymLink());
         QCOMPARE(link.symLinkTarget(), QFileInfo(paths.shipped).absoluteFilePath());
         QVERIFY(calls(dir.path()).contains("shell-cmd shell rescanPlugins"));
@@ -1319,13 +1332,13 @@ private slots:
     {
         QTemporaryDir dir;
         const PluginPaths paths = fakeOmarchy(dir.path(), "[]");
-        QDir(paths.userPlugins).mkpath("drivesync");
-        QVERIFY(write(paths.userPlugins + "/drivesync/mine.txt", "keep"));
+        QDir(paths.userPlugins).mkpath("drive-sync");
+        QVERIFY(write(paths.userPlugins + "/drive-sync/mine.txt", "keep"));
         PluginSetup setup(paths);
         setup.check();
         QTRY_COMPARE(setup.state(), QString("blocked"));
-        QVERIFY(!QFileInfo(paths.userPlugins + "/drivesync").isSymLink());
-        QFile mine(paths.userPlugins + "/drivesync/mine.txt");
+        QVERIFY(!QFileInfo(paths.userPlugins + "/drive-sync").isSymLink());
+        QFile mine(paths.userPlugins + "/drive-sync/mine.txt");
         QVERIFY(mine.open(QIODevice::ReadOnly));
         QCOMPARE(mine.readAll(), QByteArray("keep"));
         QVERIFY(calls(dir.path()).isEmpty());
@@ -1342,7 +1355,7 @@ private slots:
             if (!dangling)
                 QVERIFY(QDir().mkpath(elsewhere));
             QVERIFY(QDir().mkpath(paths.userPlugins));
-            const QString link = paths.userPlugins + "/drivesync";
+            const QString link = paths.userPlugins + "/drive-sync";
             QVERIFY(QFile::link(elsewhere, link));
             PluginSetup setup(paths);
             setup.check();
@@ -1354,9 +1367,9 @@ private slots:
         }
     }
 
-    // SyncWatch's widget, renamed: the new one takes its place on the bar by
+    // Drivesync's widget, renamed: the new one takes its place on the bar by
     // itself, then the old entry and its dangling link go.
-    void pluginSetupTakesOverTheSyncWatchWidget()
+    void pluginSetupTakesOverTheDrivesyncWidget()
     {
         QTemporaryDir dir;
         PluginPaths paths = fakeOmarchy(dir.path(), "[]");
@@ -1366,25 +1379,25 @@ private slots:
             "echo \"$*\" >> '%1/calls.log'\n"
             "case \"$*\" in\n"
             "  'plugin list --json') cat '%1/list.json' ;;\n"
-            "  'plugin enable drivesync --after syncwatch') echo '[{\"id\":\"drivesync\",\"enabled\":true}]' > '%1/list.json' ;;\n"
+            "  'plugin enable drive-sync --after drivesync') echo '[{\"id\":\"drive-sync\",\"enabled\":true}]' > '%1/list.json' ;;\n"
             "esac\n").arg(dir.path());
         QVERIFY(write(paths.omarchy, omarchy.toUtf8()));
         QDir().mkpath(paths.userPlugins);
-        QVERIFY(QFile::link(paths.legacyShipped, paths.userPlugins + "/syncwatch"));
+        QVERIFY(QFile::link(paths.legacyShipped, paths.userPlugins + "/drivesync"));
 
         PluginSetup setup(paths);
         setup.check();
         QTRY_COMPARE(setup.state(), QString("enabled"));
         QCOMPARE(calls(dir.path()), (QStringList{"shell-cmd shell rescanPlugins", "plugin list --json",
-                                                 "plugin enable drivesync --after syncwatch",
-                                                 "plugin disable syncwatch", "plugin list --json"}));
-        QVERIFY(!QFileInfo(paths.userPlugins + "/syncwatch").isSymLink());
-        QVERIFY(QFileInfo(paths.userPlugins + "/drivesync").isSymLink());
+                                                 "plugin enable drive-sync --after drivesync",
+                                                 "plugin disable drivesync", "plugin list --json"}));
+        QVERIFY(!QFileInfo(paths.userPlugins + "/drivesync").isSymLink());
+        QVERIFY(QFileInfo(paths.userPlugins + "/drive-sync").isSymLink());
     }
 
     // The old link was there but its widget was not on the bar: the enable
     // finds no place, nothing is replaced, and the usual offer follows.
-    void pluginSetupSyncWatchWidgetOffBarFallsBackToTheOffer()
+    void pluginSetupDrivesyncWidgetOffBarFallsBackToTheOffer()
     {
         QTemporaryDir dir;
         PluginPaths paths = fakeOmarchy(dir.path(), "[]");
@@ -1394,37 +1407,37 @@ private slots:
             "echo \"$*\" >> '%1/calls.log'\n"
             "case \"$*\" in\n"
             "  'plugin list --json') cat '%1/list.json' ;;\n"
-            "  'plugin enable'*) echo 'could not find target widget syncwatch' >&2; exit 1 ;;\n"
+            "  'plugin enable'*) echo 'could not find target widget drivesync' >&2; exit 1 ;;\n"
             "esac\n").arg(dir.path());
         QVERIFY(write(paths.omarchy, omarchy.toUtf8()));
         QDir().mkpath(paths.userPlugins);
-        QVERIFY(QFile::link(paths.legacyShipped, paths.userPlugins + "/syncwatch"));
+        QVERIFY(QFile::link(paths.legacyShipped, paths.userPlugins + "/drivesync"));
 
         PluginSetup setup(paths);
         setup.check();
         QTRY_COMPARE(setup.state(), QString("offer"));
-        QVERIFY(!calls(dir.path()).contains("plugin disable syncwatch"));
-        QVERIFY(!QFileInfo(paths.userPlugins + "/syncwatch").isSymLink());
+        QVERIFY(!calls(dir.path()).contains("plugin disable drivesync"));
+        QVERIFY(!QFileInfo(paths.userPlugins + "/drivesync").isSymLink());
     }
 
-    // A syncwatch link that points anywhere else is not SyncWatch's: never touched.
-    void pluginSetupLeavesAForeignSyncWatchLink()
+    // A drivesync link that points anywhere else is not Drivesync's: never touched.
+    void pluginSetupLeavesAForeignDrivesyncLink()
     {
         QTemporaryDir dir;
         PluginPaths paths = fakeOmarchy(dir.path(), "[]");
         paths.legacyShipped = dir.filePath("gone/omarchy-plugin");
         QDir().mkpath(paths.userPlugins);
-        QVERIFY(QFile::link(dir.filePath("mine"), paths.userPlugins + "/syncwatch"));
+        QVERIFY(QFile::link(dir.filePath("mine"), paths.userPlugins + "/drivesync"));
         PluginSetup setup(paths);
         setup.check();
         QTRY_COMPARE(setup.state(), QString("offer"));
-        QVERIFY(QFileInfo(paths.userPlugins + "/syncwatch").isSymLink());
-        QVERIFY(!calls(dir.path()).contains("plugin enable drivesync --after syncwatch"));
+        QVERIFY(QFileInfo(paths.userPlugins + "/drivesync").isSymLink());
+        QVERIFY(!calls(dir.path()).contains("plugin enable drive-sync --after drivesync"));
     }
     void pluginSetupEnabled()
     {
         QTemporaryDir dir;
-        const PluginPaths paths = fakeOmarchy(dir.path(), R"([{"id":"drivesync","enabled":true}])");
+        const PluginPaths paths = fakeOmarchy(dir.path(), R"([{"id":"drive-sync","enabled":true}])");
         PluginSetup setup(paths);
         setup.check();
         QTRY_COMPARE(setup.state(), QString("enabled"));
@@ -1443,12 +1456,12 @@ private slots:
             setup.decline();
             QCOMPARE(setup.state(), QString("declined"));
         }
-        QFile::remove(paths.userPlugins + "/drivesync");  // as `omarchy plugin remove` would
+        QFile::remove(paths.userPlugins + "/drive-sync");  // as `omarchy plugin remove` would
         QFile::remove(dir.filePath("calls.log"));
         PluginSetup again(paths);
         again.check();
         QCOMPARE(again.state(), QString("declined"));
-        QVERIFY(!QFileInfo(paths.userPlugins + "/drivesync").isSymLink());
+        QVERIFY(!QFileInfo(paths.userPlugins + "/drive-sync").isSymLink());
         QVERIFY(calls(dir.path()).isEmpty());
     }
 
@@ -1488,7 +1501,7 @@ private slots:
         QTemporaryDir dir;
         PluginPaths paths = fakeOmarchy(dir.path(), "[]");
         paths.declined = dir.filePath("app/bar-declined");
-        QVERIFY(QDir(paths.userPlugins).mkpath("drivesync"));
+        QVERIFY(QDir(paths.userPlugins).mkpath("drive-sync"));
         {
             PluginSetup setup(paths);
             setup.check();
@@ -1500,7 +1513,7 @@ private slots:
         PluginSetup again(paths);
         again.check();
         QCOMPARE(again.state(), QString("declined"));
-        QVERIFY(QFileInfo(paths.userPlugins + "/drivesync").isDir());  // still theirs
+        QVERIFY(QFileInfo(paths.userPlugins + "/drive-sync").isDir());  // still theirs
         QVERIFY(calls(dir.path()).isEmpty());
     }
 
@@ -1512,12 +1525,12 @@ private slots:
         PluginSetup setup(paths);
         setup.check();
         QTRY_COMPARE(setup.state(), QString("noOmarchy"));
-        QVERIFY(!QFileInfo(paths.userPlugins + "/drivesync").isSymLink());
+        QVERIFY(!QFileInfo(paths.userPlugins + "/drive-sync").isSymLink());
     }
     void syncConfigRoundTrips()
     {
         QTemporaryDir dir;
-        const QString file = dir.filePath("drivesync/config.json");
+        const QString file = dir.filePath("drive-sync/config.json");
         const SyncConfig config = oldUnitConfig();
         QString error;
         QVERIFY2(saveSyncConfig(file, config, &error), qPrintable(error));
@@ -1549,7 +1562,7 @@ private slots:
         const SyncConfig config = oldUnitConfig();
         const QStringList expected{"bisync", "gdrive:", "/home/someone/Drive",
                                    "--workdir", "/home/someone/.local/state/rclone/bisync",
-                                   "--filters-file", "/home/someone/.config/drivesync/filters.txt",
+                                   "--filters-file", "/home/someone/.config/drive-sync/filters.txt",
                                    "--drive-skip-gdocs", "--drive-skip-shortcuts", "--resilient", "--recover",
                                    "--max-lock", "2m", "--max-delete", "5", "--conflict-resolve", "newer",
                                    "--log-level", "INFO", "--fast-list",
@@ -1561,7 +1574,7 @@ private slots:
         // --fast-list: no other flag invented or dropped.
         QStringList real = QProcess::splitCommand(QString(kOldExecStart)).mid(1);
         real.replace(real.indexOf("/home/someone/.config/rclone/gdrive-filtros.txt"),
-                     "/home/someone/.config/drivesync/filters.txt");
+                     "/home/someone/.config/drive-sync/filters.txt");
         real << "--fast-list";
         QStringList a = arguments, b = real;
         std::sort(a.begin(), a.end());
@@ -1581,23 +1594,31 @@ private slots:
         QVERIFY(!rcloneRunArguments(config).contains("--fast-list"));
     }
 
-    void migrationMovesSyncWatchFoldersKeepingEveryByte()
+    void migrationMovesLegacyFoldersKeepingEveryByte_data()
     {
+        QTest::addColumn<QString>("oldName");
+        QTest::newRow("syncwatch") << "syncwatch";
+        QTest::newRow("drivesync") << "drivesync";
+    }
+    void migrationMovesLegacyFoldersKeepingEveryByte()
+    {
+        QFETCH(QString, oldName);
         QTemporaryDir dir;
         LegacyHome legacy{dir.path()};
+        legacy.name = oldName;
         QVERIFY(makeLegacyHome(legacy));
-        const QByteArray md5 = readBytes(dir.path() + "/.config/syncwatch/filters.txt.md5");
+        const QByteArray md5 = readBytes(dir.path() + "/.config/" + oldName + "/filters.txt.md5");
 
-        const QStringList problems = migrateFromSyncWatch(dir.path());
+        const QStringList problems = migrateFromLegacyNames(dir.path());
         QVERIFY2(problems.isEmpty(), qPrintable(problems.join("; ")));
         for (const LegacyFolder &folder : legacyFolders(dir.path())) {
             QVERIFY2(!QFileInfo::exists(folder.from), qPrintable(folder.from));
             QVERIFY2(QFileInfo(folder.to).isDir(), qPrintable(folder.to));
         }
-        const QString config = dir.path() + "/.config/drivesync";
+        const QString config = dir.path() + "/.config/drive-sync";
         QCOMPARE(readBytes(config + "/filters.txt"), legacy.filters);
         QCOMPARE(readBytes(config + "/filters.txt.md5"), md5);
-        QVERIFY(QFile::exists(dir.path() + "/.local/state/drivesync/paused.json"));
+        QVERIFY(QFile::exists(dir.path() + "/.local/state/drive-sync-app/paused.json"));
 
         // The config names its filters at the new place, and a run would start.
         QString error;
@@ -1608,7 +1629,7 @@ private slots:
         QVERIFY2(filtersUsable(sync->filtersFile, &error), qPrintable(error));
 
         // The manifest points an undo at the moved backup; where the file came from does not change.
-        const QString backup = dir.path() + "/.local/share/drivesync/taken-over/20261110-224919";
+        const QString backup = dir.path() + "/.local/share/drive-sync/taken-over/20261110-224919";
         const QJsonObject move = QJsonDocument::fromJson(readBytes(backup + "/manifest.json"))
                                      .object().value("moved").toArray().first().toObject();
         QCOMPARE(move.value("to").toString(), backup + "/bin/drive-sync.sh");
@@ -1620,18 +1641,18 @@ private slots:
         QTemporaryDir dir;
         LegacyHome legacy{dir.path()};
         QVERIFY(makeLegacyHome(legacy));
-        QVERIFY(migrateFromSyncWatch(dir.path()).isEmpty());
-        const QString configFile = dir.path() + "/.config/drivesync/config.json";
+        QVERIFY(migrateFromLegacyNames(dir.path()).isEmpty());
+        const QString configFile = dir.path() + "/.config/drive-sync/config.json";
         const QByteArray once = readBytes(configFile);
         const QDateTime written = QFileInfo(configFile).lastModified();
 
-        QVERIFY(migrateFromSyncWatch(dir.path()).isEmpty());
+        QVERIFY(migrateFromLegacyNames(dir.path()).isEmpty());
         QCOMPARE(readBytes(configFile), once);
         QCOMPARE(QFileInfo(configFile).lastModified(), written);
 
         // A home that never had SyncWatch gets no folder at all.
         QTemporaryDir fresh;
-        QVERIFY(migrateFromSyncWatch(fresh.path()).isEmpty());
+        QVERIFY(migrateFromLegacyNames(fresh.path()).isEmpty());
         QVERIFY(QDir(fresh.path()).entryList(QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot).isEmpty());
     }
     void migrationMergesWhenBothFoldersExist()
@@ -1642,12 +1663,12 @@ private slots:
         LegacyHome legacy{dir.path()};
         QVERIFY(makeLegacyHome(legacy));
         const QString oldState = dir.path() + "/.local/state/syncwatch";
-        const QString newState = dir.path() + "/.local/state/drivesync";
+        const QString newState = dir.path() + "/.local/state/drive-sync-app";
         QVERIFY(QDir().mkpath(newState));
         QVERIFY(write(newState + "/conflicts.json", "new"));
         QVERIFY(write(oldState + "/conflicts.json", "old"));
 
-        const QStringList problems = migrateFromSyncWatch(dir.path());
+        const QStringList problems = migrateFromLegacyNames(dir.path());
         QCOMPARE(problems.size(), 1);
         QVERIFY(problems.first().contains(oldState + "/conflicts.json"));
         // What the new folder lacked moved; what both had kept the new copy.
@@ -1657,12 +1678,52 @@ private slots:
         QCOMPARE(readBytes(oldState + "/conflicts.json"), QByteArray("old"));
         // The other folders had no new copy and moved whole.
         QVERIFY(!QFileInfo::exists(dir.path() + "/.config/syncwatch"));
-        QVERIFY(QFile::exists(dir.path() + "/.config/drivesync/filters.txt.md5"));
+        QVERIFY(QFile::exists(dir.path() + "/.config/drive-sync/filters.txt.md5"));
 
         // Once the old copy is gone, the next start empties and removes the old folder.
         QVERIFY(QFile::remove(oldState + "/conflicts.json"));
-        QVERIFY(migrateFromSyncWatch(dir.path()).isEmpty());
+        QVERIFY(migrateFromLegacyNames(dir.path()).isEmpty());
         QVERIFY(!QFileInfo::exists(oldState));
+    }
+    // ~/.local/state/drive-sync belongs to drive-sync.sh (its resync mark) and a
+    // takeover moves it whole: the app's own state must never land in it.
+    void migrationKeepsTheOldScriptsStateFolderApart()
+    {
+        QTemporaryDir dir;
+        LegacyHome legacy{dir.path()};
+        legacy.name = "drivesync";
+        QVERIFY(makeLegacyHome(legacy));
+        const QString scriptState = dir.path() + "/.local/state/drive-sync";
+        QVERIFY(QDir().mkpath(scriptState));
+        QVERIFY(write(scriptState + "/resync.mark", "4242\n"));
+
+        const QStringList problems = migrateFromLegacyNames(dir.path());
+        QVERIFY2(problems.isEmpty(), qPrintable(problems.join("; ")));
+        QCOMPARE(QDir(scriptState).entryList(QDir::Files), QStringList{"resync.mark"});
+        QCOMPARE(readBytes(scriptState + "/resync.mark"), QByteArray("4242\n"));
+        QVERIFY(QFile::exists(dir.path() + "/.local/state/drive-sync-app/paused.json"));
+    }
+    // A home that skipped a version has both earlier names: the newer one's
+    // entries win, and what both had stays behind in the older folder.
+    void migrationNewerOldNameWinsOverTheOlder()
+    {
+        QTemporaryDir dir;
+        LegacyHome oldest{dir.path()};
+        oldest.filters = "- oldest/**\n";
+        QVERIFY(makeLegacyHome(oldest));
+        LegacyHome newer{dir.path()};
+        newer.name = "drivesync";
+        newer.filters = "- newer/**\n";
+        QVERIFY(makeLegacyHome(newer));
+
+        const QStringList problems = migrateFromLegacyNames(dir.path());
+        QVERIFY(!problems.isEmpty());
+        QCOMPARE(readBytes(dir.path() + "/.config/drive-sync/filters.txt"), newer.filters);
+        QVERIFY(QFile::exists(dir.path() + "/.config/syncwatch/filters.txt"));
+        QString error;
+        const auto sync = loadSyncConfig(dir.path() + "/.config/drive-sync/config.json", &error);
+        QVERIFY2(sync.has_value(), qPrintable(error));
+        QCOMPARE(sync->filtersFile, dir.path() + "/.config/drive-sync/filters.txt");
     }
     void halfMigratedConfigRefusesToRun()
     {
@@ -1674,15 +1735,15 @@ private slots:
         QVERIFY(makeLegacyHome(legacy));
         QVERIFY(moveLegacyFolders(legacyFolders(dir.path())).isEmpty());
         QString error;
-        const auto sync = loadSyncConfig(dir.path() + "/.config/drivesync/config.json", &error);
+        const auto sync = loadSyncConfig(dir.path() + "/.config/drive-sync/config.json", &error);
         QVERIFY2(sync.has_value(), qPrintable(error));
         QCOMPARE(sync->filtersFile, dir.path() + "/.config/syncwatch/filters.txt");
         QString refusal;
         QVERIFY(runCommandPlan(*sync, &refusal).isEmpty());
         QVERIFY(!refusal.isEmpty());
 
-        QVERIFY(migrateFromSyncWatch(dir.path()).isEmpty());
-        const auto fixed = loadSyncConfig(dir.path() + "/.config/drivesync/config.json", &error);
+        QVERIFY(migrateFromLegacyNames(dir.path()).isEmpty());
+        const auto fixed = loadSyncConfig(dir.path() + "/.config/drive-sync/config.json", &error);
         QVERIFY(!runCommandPlan(*fixed, &refusal).isEmpty());
     }
     void filtersUsableRequiresMatchingMd5()
@@ -2250,7 +2311,7 @@ private slots:
         QCOMPARE(plan.config.remote, QString("gdrive:"));
         QCOMPARE(plan.config.localPath, old.home + "/Drive");
         QCOMPARE(plan.config.workDir, old.home + "/.local/state/rclone/bisync");
-        QCOMPARE(plan.config.filtersFile, old.home + "/.config/drivesync/filters.txt");
+        QCOMPARE(plan.config.filtersFile, old.home + "/.config/drive-sync/filters.txt");
         QCOMPARE(plan.config.logFile, old.home + "/.local/state/drive-sync.log");
         QCOMPARE(plan.config.rcloneFlags,
                  (QStringList{"--drive-skip-gdocs", "--drive-skip-shortcuts", "--resilient", "--recover",
@@ -2437,14 +2498,10 @@ private slots:
         OldSetup old = makeOldSetup(dir.path());
         old.paths.systemctl = takeoverSystemctl(dir.path(), 0);
         QDir().mkpath(old.paths.appState);
-        // Another drivesync, alive, holds the lock: apply and undo both refuse
+        // Another drive-sync, alive, holds the lock: apply and undo both refuse
         // and leave its lock alone.
-        const QString other = dir.filePath("drivesync");
-        QVERIFY(write(other, "#!/bin/sh\nsleep 30\n"));
-        QFile::setPermissions(other, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
         QProcess holder;
-        holder.start("/bin/sh", {other});
-        QVERIFY(holder.waitForStarted());
+        QVERIFY(startNamedHolder(holder, dir.path(), "drive-sync"));
         const QByteArray holderPid = QByteArray::number(holder.processId());
         QVERIFY(write(takeoverLockPath(old.paths.appState), holderPid));
         QString error;
@@ -2505,17 +2562,57 @@ private slots:
         QDir().mkpath(paths.appState);
         BackendPaths live = paths;
         live.proc = "/proc";
-        // This test runs as drivesync_tests, a live drivesync process.
-        QVERIFY(write(takeoverLockPath(live.appState), QByteArray::number(QCoreApplication::applicationPid())));
+        // A live drive-sync holds the takeover lock.
+        QProcess holder;
+        QVERIFY(startNamedHolder(holder, dir.path(), "drive-sync"));
+        QVERIFY(write(takeoverLockPath(live.appState), QByteArray::number(holder.processId())));
         QString out, err;
         QTextStream o(&out), e(&err);
         QCOMPARE(runSyncCommand({}, live, o, e), 1);
         QVERIFY(err.contains("takeover"));
         QVERIFY(calls(dir.path()).isEmpty());
+        holder.kill();
+        holder.waitForFinished();
 
         // A takeover killed halfway leaves its lock behind: it does not count.
         QVERIFY(write(takeoverLockPath(live.appState), "999999999\n"));
         QCOMPARE(runSyncCommand({}, live, o, e), 0);
+    }
+
+    // "drive-sync" is also a piece of drive-sync.sh, drive-sync-aviso and the
+    // units' command lines, so the lock holder is told by the program's exact
+    // name, never by a substring of its command line.
+    void takeoverLockIsHeldOnlyByTheAppByExactName()
+    {
+        QTemporaryDir dir;
+        const QString state = dir.filePath("state");
+        const QString proc = dir.filePath("proc");
+        QVERIFY(QDir().mkpath(state));
+        QVERIFY(write(takeoverLockPath(state), "4242\n"));
+        QVERIFY(QDir().mkpath(proc + "/4242"));
+        const auto argv = [](const QStringList &args) {
+            QByteArray joined;
+            for (const QString &arg : args)
+                joined += arg.toUtf8() + '\0';
+            return joined;
+        };
+        struct Case {
+            QStringList args;
+            bool held;
+        };
+        const QList<Case> cases{
+            {{"/usr/bin/drive-sync", "takeover", "--apply"}, true},
+            {{"drive-sync"}, true},
+            {{"/usr/bin/drivesync"}, true},  // a window left open across the rename
+            {{"/usr/bin/syncwatch"}, true},
+            {{"bash", "/home/someone/.local/bin/drive-sync.sh", "resync"}, false},
+            {{"/usr/bin/drive-sync-aviso"}, false},
+            {{"vim", "drive-sync-notes.md"}, false},
+        };
+        for (const Case &c : cases) {
+            QVERIFY(write(proc + "/4242/cmdline", argv(c.args)));
+            QVERIFY2(takeoverLockHeld(state, proc) == c.held, qPrintable(c.args.join(' ')));
+        }
     }
 
     void takeoverStopsWhenARunStartsDuringTheStop()
@@ -2537,7 +2634,7 @@ private slots:
         QTemporaryDir dir;
         OldSetup old = makeOldSetup(dir.path());
         old.paths.systemctl = takeoverSystemctl(dir.path(), 0);
-        const QStringList skip{".config/drivesync", ".local/share/drivesync", ".local/state/drivesync"};
+        const QStringList skip{".config/drive-sync", ".local/share/drive-sync", ".local/state/drive-sync-app"};
         const auto before = filesUnder(old.home, skip);
         QString error;
         QVERIFY(applyTakeover(old.paths, detectTakeover(old.paths, settledSnapshot()), QDateTime::currentDateTimeUtc(),
@@ -2645,13 +2742,13 @@ private slots:
         setup.check();
         QTRY_COMPARE(setup.state(), QString("offer"));
         QCOMPARE(setup.found(), QStringList{"/a/drive-sync.service"});
-        QCOMPARE(calls(dir.path()), QStringList{"drivesync takeover --check --json"});
+        QCOMPARE(calls(dir.path()), QStringList{"drive-sync takeover --check --json"});
 
         // The takeover itself, then a fresh look, which now says managed.
         write(dir.filePath("answer.json"), R"({"ok":true,"error":"","state":"managed","found":[],"blockers":[]})");
         setup.accept();
         QTRY_COMPARE(setup.state(), QString("managed"));
-        QVERIFY(calls(dir.path()).contains("drivesync takeover --apply --json"));
+        QVERIFY(calls(dir.path()).contains("drive-sync takeover --apply --json"));
 
         // Nothing to take over: no offer, and accept does nothing.
         QTemporaryDir none;
@@ -2659,7 +2756,7 @@ private slots:
         quiet.check();
         QTRY_COMPARE(quiet.state(), QString("none"));
         quiet.accept();
-        QCOMPARE(calls(none.path()), QStringList{"drivesync takeover --check --json"});
+        QCOMPARE(calls(none.path()), QStringList{"drive-sync takeover --check --json"});
     }
 
     void takeoverSetupShowsBlockersAndFailures()
@@ -2713,7 +2810,7 @@ private slots:
         // The run ended: the next look applies without asking again.
         write(dir.filePath("answer.json"), offer);
         setup.check();
-        QTRY_COMPARE(calls(dir.path()).count("drivesync takeover --apply --json"), 2);
+        QTRY_COMPARE(calls(dir.path()).count("drive-sync takeover --apply --json"), 2);
         QVERIFY(!setup.pending());
 
         // Cancelled while waiting: the next offer is only an offer.
@@ -2728,7 +2825,7 @@ private slots:
         write(other.filePath("answer.json"), offer);
         cancelled.check();
         QTRY_COMPARE(cancelled.state(), QString("offer"));
-        QCOMPARE(calls(other.path()).count("drivesync takeover --apply --json"), 1);
+        QCOMPARE(calls(other.path()).count("drive-sync takeover --apply --json"), 1);
 
         // Blocked by something else than a run: the confirmation is dropped.
         QTemporaryDir third;
@@ -2769,9 +2866,9 @@ private slots:
         // The five run side by side, so they finish in any order.
         QStringList made = calls(dir.path());
         made.sort();
-        QCOMPARE(made, (QStringList{"drivesync pause --json", "drivesync pause --minutes 60 --json",
-                                    "drivesync pause --until-tomorrow --json", "drivesync resume --json",
-                                    "drivesync sync --json"}));
+        QCOMPARE(made, (QStringList{"drive-sync pause --json", "drive-sync pause --minutes 60 --json",
+                                    "drive-sync pause --until-tomorrow --json", "drive-sync resume --json",
+                                    "drive-sync sync --json"}));
 
         // The pause shows as soon as the mark is there.
         PauseMark mark;
@@ -3865,7 +3962,7 @@ private slots:
         QVERIFY(write(filters + ".md5", "0123456789abcdef0123456789abcdef"));
         QVERIFY(!filtersUsable(filters, &why));
         QVERIFY2(why.contains(kFiltersChangedReason), qPrintable(why));  // the filters changed
-        // The line "drivesync run" writes when it refuses, read back from the log.
+        // The line "drive-sync run" writes when it refuses, read back from the log.
         const QString log = QString("2026/11/11 12:00:00 CRITICAL: DriveSync did not start rclone: %1\n").arg(why);
         const QList<SyncRun> runs = SyncLog::parse(log);
         QCOMPARE(runs.size(), 1);
@@ -3986,7 +4083,7 @@ private slots:
 
         // One answer per question, in the order fixQuestions lists them.
         backend.answerFix({"cloud", "notebook"});
-        QTRY_COMPARE(calls(dir.path()).filter("drivesync fix --answers").size(), 1);
+        QTRY_COMPARE(calls(dir.path()).filter("drive-sync fix --answers").size(), 1);
         const QJsonObject sent = QJsonDocument::fromJson(readBytes(paths.appState + "/fix-answers.json")).object();
         QCOMPARE(sent.value("a.txt").toString(), QString("cloud"));
         QCOMPARE(sent.value("b.txt").toString(), QString("notebook"));
@@ -4008,13 +4105,13 @@ private slots:
         QCOMPARE(backend.fixCopiesToNotebook(), 0);
         QVERIFY(spy.count() >= 1);
         backend.confirmFix();
-        QTRY_COMPARE(calls(dir.path()).filter("drivesync fix --confirm --json").size(), 1);
+        QTRY_COMPARE(calls(dir.path()).filter("drive-sync fix --confirm --json").size(), 1);
         QVERIFY(clearFix(paths.appState));
         QTRY_COMPARE(backend.fixStep(), QString());
         QVERIFY(backend.fixCopyList().isEmpty());
         QTRY_COMPARE(backend.status(), QString("ok"));
         backend.startFix();
-        QTRY_COMPARE(calls(dir.path()).filter("drivesync fix --start --json").size(), 1);
+        QTRY_COMPARE(calls(dir.path()).filter("drive-sync fix --start --json").size(), 1);
     }
     void backendReadsTheBlockedDeletes()
     {
@@ -4043,7 +4140,7 @@ private slots:
         QCOMPARE(backend.blockedList().at(2).toMap().value("deletedInCloud").toBool(), false);
 
         backend.allowDeletes(11);
-        QTRY_COMPARE(calls(dir.path()).filter("drivesync deletes --allow 11 --json").size(), 1);
+        QTRY_COMPARE(calls(dir.path()).filter("drive-sync deletes --allow 11 --json").size(), 1);
 
         // A run after it holds nothing back.
         QSignalSpy spy(&backend, &Backend::blockedChanged);
@@ -4220,14 +4317,14 @@ private slots:
         Backend backend(paths);
         QTRY_COMPARE(backend.fixStep(), QString("questions"));
         backend.answerFix({"notebook", "cloud"});
-        QTRY_COMPARE(calls(dir.path()).filter("drivesync fix --answers").size(), 1);
+        QTRY_COMPARE(calls(dir.path()).filter("drive-sync fix --answers").size(), 1);
         const QJsonObject sent = QJsonDocument::fromJson(readBytes(paths.appState + "/fix-answers.json")).object();
         QCOMPARE(sent.value("__proto__").toString(), QString("notebook"));
         QCOMPARE(sent.value("constructor").toString(), QString("cloud"));
         // A count that does not match the questions sends nothing.
         backend.answerFix({"cloud"});
         QTest::qWait(300);
-        QCOMPARE(calls(dir.path()).filter("drivesync fix --answers").size(), 1);
+        QCOMPARE(calls(dir.path()).filter("drive-sync fix --answers").size(), 1);
         QVERIFY(!backend.message().isEmpty());
     }
     void fixWritersTakeTheLock()
@@ -4551,7 +4648,7 @@ private slots:
         QCOMPARE(runDeletesCommand({"--allow"}, paths, o, e), 1);
         QCOMPARE(runDeletesCommand({"--allow", "eleven"}, paths, o, e), 1);
         QCOMPARE(runDeletesCommand({}, paths, o, e), 1);
-        QVERIFY(err.contains("usage: drivesync deletes"));
+        QVERIFY(err.contains("usage: drive-sync deletes"));
     }
 
     void allowRefusedWhilePausedOrFixing()
@@ -4595,7 +4692,7 @@ private slots:
 
     void runLogsTheRaisedGuard()
     {
-        // drivesync run writes this before it execs rclone; never call
+        // drive-sync run writes this before it execs rclone; never call
         // runRunCommand here, it would exec the real rclone.
         AllowDeletes allow;
         allow.count = 11;
@@ -4645,7 +4742,7 @@ private slots:
         BackendPaths paths = controlPaths(dir.path(), true);
         paths.log = config.logFile;
 
-        // What drivesync run does, without the exec.
+        // What drive-sync run does, without the exec.
         const auto run = [&]() {
             QString refusal, note;
             const QStringList arguments =
@@ -4905,7 +5002,7 @@ private slots:
     void fixFinalRunTakesTheConfirmation()
     {
         // A fix whose final run stopped at the guard: D sends it back to that
-        // run, which dry-runs with the raised guard, as drivesync run does.
+        // run, which dry-runs with the raised guard, as drive-sync run does.
         const auto setUp = [](const QString &dir, FixSetup *s) {
             *s = makeFixSetup(dir);
             QVERIFY(write(s->config.filtersFile + ".md5",

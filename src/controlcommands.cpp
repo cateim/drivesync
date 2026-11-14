@@ -26,7 +26,7 @@ int answer(bool json, const QString &error, QTextStream &out, QTextStream &err) 
             << "\n";
         out.flush();
     } else if (!error.isEmpty()) {
-        err << "drivesync: " << error << "\n";
+        err << "drive-sync: " << error << "\n";
         err.flush();
     }
     return error.isEmpty() ? 0 : 1;
@@ -73,10 +73,13 @@ bool takeoverLockHeld(const QString &appState, const QString &proc) {
     QFile cmdline(QString("%1/%2/cmdline").arg(proc).arg(pid));
     if (!ok || pid <= 0 || !cmdline.open(QIODevice::ReadOnly))
         return false;
-    // A SyncWatch window left open across the rename to DriveSync still runs
-    // under its old name and may hold the lock.
-    const QByteArray program = cmdline.readAll();
-    return program.contains("drivesync") || program.contains("syncwatch");
+    // The program is the first argument, matched by its exact name: "drive-sync"
+    // is also a piece of drive-sync.sh and of the units' command lines, so a
+    // substring match would take a pid reused by them for the app. A window
+    // left open across a rename still runs under its old name and may hold
+    // the lock.
+    const QString program = QFileInfo(QString::fromLocal8Bit(cmdline.readAll().split('\0').value(0))).fileName();
+    return program == "drive-sync" || program == "drivesync" || program == "syncwatch";
 }
 
 bool runProcess(const QString &program, const QStringList &arguments, int timeoutMs, QByteArray *output,
@@ -110,7 +113,7 @@ int runSyncCommand(const QStringList &arguments, const BackendPaths &paths, QTex
     QStringList rest = arguments;
     const bool json = takeJson(&rest);
     if (!rest.isEmpty())
-        return answer(json, "usage: drivesync sync [--json]", out, err);
+        return answer(json, "usage: drive-sync sync [--json]", out, err);
     if (takeoverLockHeld(paths.appState, paths.proc))
         return answer(json, "a takeover is running; sync when it ends", out, err);
     // run-condition would skip the run anyway: say so instead of "ok".
@@ -119,7 +122,7 @@ int runSyncCommand(const QStringList &arguments, const BackendPaths &paths, QTex
     // A pause that ended is cleared by the next run itself, so it does not stop one.
     const PauseMark mark = readPause(pauseFilePath(paths.appState));
     if (paths.managed && mark.present && !pauseEnded(mark, QDateTime::currentDateTimeUtc()))
-        return answer(json, "drive-sync is paused; run drivesync resume first", out, err);
+        return answer(json, "drive-sync is paused; run drive-sync resume first", out, err);
     return answer(json, startOneRun(paths), out, err);
 }
 
@@ -127,7 +130,7 @@ int runPauseCommand(const QStringList &arguments, const BackendPaths &paths, con
                     QTextStream &err) {
     QStringList rest = arguments;
     const bool json = takeJson(&rest);
-    const QString usage = "usage: drivesync pause [--minutes N | --until-tomorrow] [--json]";
+    const QString usage = "usage: drive-sync pause [--minutes N | --until-tomorrow] [--json]";
     QDateTime until;
     if (rest.size() == 2 && rest.at(0) == "--minutes") {
         bool ok = false;
@@ -158,7 +161,7 @@ int runResumeCommand(const QStringList &arguments, const BackendPaths &paths, QT
     QStringList rest = arguments;
     const bool json = takeJson(&rest);
     if (!rest.isEmpty())
-        return answer(json, "usage: drivesync resume [--json]", out, err);
+        return answer(json, "usage: drive-sync resume [--json]", out, err);
     const QString file = pauseFilePath(paths.appState);
     if (!clearPause(file))
         return answer(json, QString("cannot remove %1").arg(file), out, err);
@@ -288,7 +291,7 @@ int runRunCommand(const BackendPaths &paths, QTextStream &err) {
     else if (config)
         arguments = runPlanTakingMark(*config, paths.appState, rclone, QDateTime::currentDateTimeUtc(), &error, &note);
     if (arguments.isEmpty()) {
-        err << "drivesync: did not start rclone: " << error << "\n";
+        err << "drive-sync: did not start rclone: " << error << "\n";
         err.flush();
         // In the log too, in rclone's format, so the window and the
         // notification show why this run failed.
@@ -306,7 +309,7 @@ int runRunCommand(const BackendPaths &paths, QTextStream &err) {
         argv << item.data();
     argv << nullptr;
     execv(argv.first(), argv.data());
-    err << "drivesync: could not start " << rclone << "\n";
+    err << "drive-sync: could not start " << rclone << "\n";
     err.flush();
     return 1;
 }

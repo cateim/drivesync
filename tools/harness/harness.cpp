@@ -1,6 +1,6 @@
 // The DriveSync window, offscreen, against a made-up drive-sync. It loads the
 // real Main.qml with a fake log, a fake systemctl, a fake omarchy and a fake
-// drivesync, presses keys, and saves what the window shows as a PNG. Nothing
+// drive-sync, presses keys, and saves what the window shows as a PNG. Nothing
 // opens on the desktop and nothing of this machine is read (unless --real),
 // so the pictures can go into the README.
 //
@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
         log += L(s, "NOTICE", "Bisync aborted. Please try again.");
         log += L(s, "NOTICE", "Failed to bisync: too many deletes");
         if (scenario == "guardfilters")
-            log += L(now.addSecs(-60), "CRITICAL", "DriveSync did not start rclone: /home/someone/.config/drivesync/filters.txt "
+            log += L(now.addSecs(-60), "CRITICAL", "DriveSync did not start rclone: /home/someone/.config/drive-sync/filters.txt "
                                                    "changed since the last resync, so bisync would lose its base");
     }
     if (scenario == "empty")
@@ -206,25 +206,25 @@ int main(int argc, char **argv) {
         : takeover == "failed" ? R"({"ok":false,"error":"could not stop the old timers: Access denied","state":"","found":[],"blockers":[]})"
         : R"({"ok":true,"error":"","state":"none","found":[],"blockers":[]})";
     put(dir.filePath("answer.json"), answer);
-    // The fake drivesync answers every child call with the takeover check,
+    // The fake drive-sync answers every child call with the takeover check,
     // and logs the calls, which are printed at the end.
-    put(dir.filePath("drivesync"), QString("#!/bin/sh\necho \"$*\" >> '%2'\ncat '%1'\n").arg(dir.filePath("answer.json"), dir.filePath("calls.log")).toUtf8());
-    QFile::setPermissions(dir.filePath("drivesync"), QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
-    fake.self = dir.filePath("drivesync");
+    put(dir.filePath("drive-sync"), QString("#!/bin/sh\necho \"$*\" >> '%2'\ncat '%1'\n").arg(dir.filePath("answer.json"), dir.filePath("calls.log")).toUtf8());
+    QFile::setPermissions(dir.filePath("drive-sync"), QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    fake.self = dir.filePath("drive-sync");
     Backend backend(real ? BackendPaths::defaults() : fake);
-    TakeoverSetup takeoverSetup(dir.filePath("drivesync"));
+    TakeoverSetup takeoverSetup(dir.filePath("drive-sync"));
     takeoverSetup.check();
 
     // none: the widget is already on the bar, so no banner shows.
     const QString bar = opt("--bar", "none");
-    const QByteArray list = bar == "offer" ? "[]" : R"([{"id":"drivesync","enabled":true}])";
+    const QByteArray list = bar == "offer" ? "[]" : R"([{"id":"drive-sync","enabled":true}])";
     put(dir.filePath("list.json"), list);
     put(dir.filePath("omarchy"), QString("#!/bin/sh\ncase \"$*\" in\n  'plugin list --json') cat '%1' ;;\nesac\n")
                                      .arg(dir.filePath("list.json")).toUtf8());
     QFile::setPermissions(dir.filePath("omarchy"), QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
     QDir().mkpath(dir.filePath("shipped"));
     if (bar == "blocked")
-        QDir().mkpath(dir.filePath("plugins/drivesync"));
+        QDir().mkpath(dir.filePath("plugins/drive-sync"));
     PluginSetup pluginSetup({dir.filePath("shipped"), dir.filePath("plugins"), dir.filePath("omarchy"), QString(), QString(), QString()});
     pluginSetup.check();
 
@@ -283,6 +283,6 @@ int main(int argc, char **argv) {
            (long long)backend.conflicts().size(), qPrintable(out));
     QFile calls(dir.filePath("calls.log"));
     if (calls.open(QIODevice::ReadOnly))
-        printf("drivesync calls:\n%s", calls.readAll().constData());
+        printf("drive-sync calls:\n%s", calls.readAll().constData());
     return 0;
 }

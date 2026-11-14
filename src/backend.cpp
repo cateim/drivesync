@@ -45,7 +45,7 @@ BackendPaths BackendPaths::defaults() {
                        "/proc",
                        QStandardPaths::findExecutable("systemctl"),
                        QStandardPaths::findExecutable("find"),
-                       home + "/.local/state/drivesync"};
+                       home + "/.local/state/drive-sync-app"};
     paths.config = defaultSyncConfigPath();
     paths.self = QCoreApplication::applicationFilePath();
     if (const auto config = loadSyncConfig(paths.config, nullptr)) {

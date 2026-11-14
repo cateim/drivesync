@@ -3,8 +3,8 @@ import Quickshell
 import Quickshell.Io
 import "DriveSyncModel.js" as Model
 
-// Polls `drivesync status --json` and runs the widget's actions through
-// `drivesync` too (sync, pause, resume), so the widget never decides what a
+// Polls `drive-sync status --json` and runs the widget's actions through
+// `drive-sync` too (sync, pause, resume), so the widget never decides what a
 // command may do: the app refuses what does not make sense.
 Item {
   id: root
@@ -52,8 +52,8 @@ Item {
   // window offers the other lengths.
   function togglePause() {
     if (controlProcess.running) return
-    var command = Model.canResume(status) ? ["drivesync", "resume"]
-                : Model.canPause(status) ? ["drivesync", "pause", "--minutes", "60"] : null
+    var command = Model.canResume(status) ? ["drive-sync", "resume"]
+                : Model.canPause(status) ? ["drive-sync", "pause", "--minutes", "60"] : null
     if (!command) return
     actionError = ""
     controlProcess.command = command
@@ -80,21 +80,21 @@ Item {
   Process {
     id: statusProcess
     // A fixed argument list: nothing from the shell or the settings reaches it.
-    command: ["drivesync", "status", "--json"]
+    command: ["drive-sync", "status", "--json"]
     // Parse when the stream ends, not on exit: the two signals have no fixed order.
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: { root.streamed = true; root.applyStatus(text) }
     }
     onExited: function(exitCode) {
-      if (exitCode !== 0) console.warn("[drivesync] drivesync status exited with " + exitCode)
+      if (exitCode !== 0) console.warn("[drive-sync] drive-sync status exited with " + exitCode)
     }
     // A missing binary fails to start: Quickshell then ends the process
     // without ending the stream or emitting exited, so this is the only signal.
     onRunningChanged: { if (!running) { watchdog.stop(); if (!root.streamed) root.applyStatus("") } }
   }
 
-  // A poll that never ends (an old drivesync opens its window instead of
+  // A poll that never ends (an old drive-sync opens its window instead of
   // answering) is stopped, and the bar says it does not know. Longer than a
   // cold conflict scan (30 s) plus a slow systemctl (5 s).
   Timer {
@@ -108,8 +108,8 @@ Item {
 
   function applyStatus(raw) {
     var parsed = Model.parseSnapshot(raw)
-    // A missing or old drivesync shows as "unknown", never as the last good snapshot.
-    if (!parsed.ok) console.warn("[drivesync] drivesync status printed no snapshot")
+    // A missing or old drive-sync shows as "unknown", never as the last good snapshot.
+    if (!parsed.ok) console.warn("[drive-sync] drive-sync status printed no snapshot")
     status = parsed
     if (parsed.running) starting = false
   }
@@ -117,27 +117,27 @@ Item {
   Process {
     id: startProcess
     // Queues one run and returns at once; the run takes minutes.
-    command: ["drivesync", "sync"]
+    command: ["drive-sync", "sync"]
     stderr: StdioCollector { id: startErr; waitForEnd: true }
     onExited: function(exitCode) {
       if (exitCode !== 0) {
         root.starting = false
-        root.actionError = Model.cleanText(startErr.text) || ("drivesync sync exit " + exitCode)
-        console.warn("[drivesync] drivesync sync failed: " + root.actionError)
+        root.actionError = Model.cleanText(startErr.text) || ("drive-sync sync exit " + exitCode)
+        console.warn("[drive-sync] drive-sync sync failed: " + root.actionError)
       }
       settle.restart()
     }
   }
 
   // Pause or resume; the fixed lists in togglePause() are its only commands
-  // ["drivesync", "pause", "--minutes", "60"] and ["drivesync", "resume"].
+  // ["drive-sync", "pause", "--minutes", "60"] and ["drive-sync", "resume"].
   Process {
     id: controlProcess
     stderr: StdioCollector { id: controlErr; waitForEnd: true }
     onExited: function(exitCode) {
       if (exitCode !== 0) {
-        root.actionError = Model.cleanText(controlErr.text) || ("drivesync exit " + exitCode)
-        console.warn("[drivesync] " + root.actionError)
+        root.actionError = Model.cleanText(controlErr.text) || ("drive-sync exit " + exitCode)
+        console.warn("[drive-sync] " + root.actionError)
       }
       root.refresh()
     }

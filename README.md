@@ -34,9 +34,9 @@ and a bar widget, driven from the keyboard.
   every file that changed in the cloud meanwhile.
 
 It starts a resync only as a fix you confirmed, and touches no synced file
-otherwise. It writes its own state in `~/.local/state/drivesync/`, the link
+otherwise. It writes its own state in `~/.local/state/drive-sync-app/`, the link
 to its bar widget and, when you accept, the bar layout through
-`omarchy plugin`. After a takeover it also owns `~/.config/drivesync/` and
+`omarchy plugin`. After a takeover it also owns `~/.config/drive-sync/` and
 the `drive-sync` user timers.
 
 ## Screens
@@ -84,15 +84,15 @@ the `drive-sync` user timers.
 | `systemctl --user show drive-sync.service drive-sync.timer` | Running, last result, timer on and enabled                   |
 | `systemctl --user list-timers drive-sync.timer`             | Next run                                                     |
 | `~/.local/state/drive-sync/pausado`                         | A resync from `drive-sync.sh` that paused the timer          |
-| `~/.config/drivesync/config.json`                           | The rclone command, once DriveSync runs drive-sync           |
-| `~/.local/state/drivesync/paused.json`                      | A pause, and when it ends                                    |
-| `~/.local/state/drivesync/fix.json`                         | A fix: its step, the dry run's count and its questions       |
+| `~/.config/drive-sync/config.json`                           | The rclone command, once DriveSync runs drive-sync           |
+| `~/.local/state/drive-sync-app/paused.json`                      | A pause, and when it ends                                    |
+| `~/.local/state/drive-sync-app/fix.json`                         | A fix: its step, the dry run's count and its questions       |
 | `find ~/Drive -name '*.conflict[0-9]*'`                     | Conflict copies (`.git`, `node_modules` and `.venv` skipped) |
 
 The log is watched, systemd is polled every 30 seconds (5 while a run is
 going), and conflict copies are looked for again every 2 minutes and after
 each run. The count of conflict copies is kept in
-`~/.local/state/drivesync/conflicts.json`, so the bar does not walk `~/Drive`
+`~/.local/state/drive-sync-app/conflicts.json`, so the bar does not walk `~/Drive`
 every few seconds.
 
 ## Bar widget
@@ -102,13 +102,13 @@ every few seconds.
   <img src="assets/images/bar-tooltip.png" width="242" alt="The cloud on the Omarchy bar with its tooltip: Drive: Synced at 10:31">
 </p>
 
-The package installs the widget under `/usr/share/drivesync/omarchy-plugin`.
+The package installs the widget under `/usr/share/drive-sync/omarchy-plugin`.
 Omarchy only loads plugins from `~/.config/omarchy/plugins`, so the first time
 the window opens it links the widget there and offers to put it on the bar
 (`B`). If an older drive-sync widget is on the bar, DriveSync offers to take
 its place. Nothing changes on the bar without that key or button, and the
 bar's layout is only changed through `omarchy plugin`. `N` says no, and the
-offer does not come back; delete `~/.local/state/drivesync/bar-declined` to
+offer does not come back; delete `~/.local/state/drive-sync-app/bar-declined` to
 be asked again. After a package upgrade, `omarchy restart shell` loads the new
 widget. In its panel, `S` syncs now, `P` pauses for an hour or resumes, and
 `?` lists every key; hovering an icon says what it does.
@@ -129,19 +129,19 @@ itself, and `T` cancels the wait.
   `~/.config/systemd/user` wins over a packaged one, so installing the package
   changes nothing until a takeover.
 - The same remote, folder, work dir, log and rclone flags go to
-  `~/.config/drivesync/config.json`. The filters move with their `.md5` to
-  `~/.config/drivesync/filters.txt`, byte for byte, so bisync keeps its base.
+  `~/.config/drive-sync/config.json`. The filters move with their `.md5` to
+  `~/.config/drive-sync/filters.txt`, byte for byte, so bisync keeps its base.
 - The old units, `drive-sync.sh`, `drive-sync-aviso`, the filters and the old
-  state move to `~/.local/share/drivesync/taken-over/<date>/`, with a manifest.
+  state move to `~/.local/share/drive-sync/taken-over/<date>/`, with a manifest.
   Nothing is deleted. If any step fails, every step done so far is undone,
   except when an old file cannot move back: then every drive-sync timer is
   left off, the error names the file, and the manifest says where each one is.
-- `drivesync takeover --undo` goes back, unless a fix is under way.
+- `drive-sync takeover --undo` goes back, unless a fix is under way.
 
-`drivesync run` refuses to start rclone when the filters' `.md5` is missing or
+`drive-sync run` refuses to start rclone when the filters' `.md5` is missing or
 stale: a single bisync run in that state throws away its base, and only a
 resync brings it back. So filters change in two steps: edit
-`~/.config/drivesync/filters.txt`, then press `F`.
+`~/.config/drive-sync/filters.txt`, then press `F`.
 
 ## Fixing a broken sync
 
@@ -189,7 +189,7 @@ that list instead of a fix:
 2. `D` opens the list, split by side. A file gone from the cloud would be
    deleted on the notebook, for good: those come first, marked `↓`. A file
    gone from the notebook would go to the Drive trash (`↑`). The window
-   shows the first 500; `drivesync deletes --list` prints all of them.
+   shows the first 500; `drive-sync deletes --list` prints all of them.
 3. To let them through, type how many files the list has and press `Enter`.
    One run starts with the guard raised just enough for them, never
    `--force`; the run after it has the guard again.
@@ -208,15 +208,15 @@ restore them in `~/Drive` (or from the Drive trash) and sync again.
 ## Command line
 
 ```sh
-drivesync                  # the window (also: drivesync open)
-drivesync status           # one line: the status and any warnings
-drivesync status --json    # the same state as JSON, for the bar and scripts
-drivesync sync             # one run now
-drivesync pause [--minutes N | --until-tomorrow]   # no flag: until resumed
-drivesync resume           # end the pause and start a run
-drivesync takeover --check | --apply | --undo
-drivesync fix --start | --confirm | --answers <file.json> | --cancel | --retry
-drivesync deletes --list | --allow <count>   # after a max-delete stop
+drive-sync                 # the window (also: drive-sync open)
+drive-sync status           # one line: the status and any warnings
+drive-sync status --json    # the same state as JSON, for the bar and scripts
+drive-sync sync             # one run now
+drive-sync pause [--minutes N | --until-tomorrow]   # no flag: until resumed
+drive-sync resume           # end the pause and start a run
+drive-sync takeover --check | --apply | --undo
+drive-sync fix --start | --confirm | --answers <file.json> | --cancel | --retry
+drive-sync deletes --list | --allow <count>   # after a max-delete stop
 ```
 
 `sync`, `pause`, `resume`, `takeover`, `fix` and `deletes` take `--json` and
@@ -248,8 +248,8 @@ of the Google Drive mirror.
 ## Develop
 
 ```sh
-bin/build            # build/drivesync
-build/drivesync      # run it
+bin/build            # build/drive-sync
+build/drive-sync      # run it
 bin/test             # Qt Test, offscreen
 (cd plugin && node --test tests/*.test.mjs)   # the bar widget's logic
 ```
