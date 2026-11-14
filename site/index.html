@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="home.title">DriveSync</title>
+    <meta
+      name="description"
+      data-i18n-content="home.description"
+      content="DriveSync keeps a folder on your Omarchy computer and your Google Drive in sync both ways, and shows how that sync is doing."
+    />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <nav>
+      <div class="wrap">
+        <a class="brand" href="./">
+          <img src="favicon.svg" alt="" width="30" height="30" />
+          <span>DriveSync</span>
+        </a>
+        <div class="links">
+          <a href="privacy.html" data-i18n="nav.privacy">Privacy</a>
+          <a href="https://github.com/CaTeIM/drivesync" class="hide-sm">GitHub</a>
+          <div class="lang" role="group" aria-label="Language / Idioma">
+            <button type="button" data-lang="en" lang="en" aria-pressed="true">EN</button>
+            <button type="button" data-lang="pt-BR" lang="pt-BR" aria-pressed="false">PT</button>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <header class="hero wrap">
+      <h1 data-i18n="home.h1">Google Drive on Omarchy, in sync and in plain sight</h1>
+      <p class="sub" data-i18n="home.sub">
+        DriveSync is a desktop app for <a href="https://omarchy.org/">Omarchy</a> that keeps a
+        folder on your computer (<code>~/Drive</code>) and your Google Drive in sync both ways,
+        every 15 minutes, with <a href="https://rclone.org/bisync/">rclone bisync</a>, and shows
+        how that sync is doing: in a window, on the Omarchy bar and from the command line.
+      </p>
+      <img
+        class="shot"
+        src="images/window-runs.png"
+        width="1000"
+        height="700"
+        data-i18n-alt="home.shotAlt"
+        alt="The DriveSync window during a run: the headline Syncing now with a progress bar, the recent runs, and the files the picked run copied"
+      />
+    </header>
+
+    <main class="wrap">
+      <h2 data-i18n="home.whatTitle">What it does</h2>
+      <ul class="features">
+        <li data-i18n="home.what1">
+          <strong>Status</strong>: in sync, syncing now, paused, or failed with its cause and how
+          to recover.
+        </li>
+        <li data-i18n="home.what2">
+          <strong>Runs and conflicts</strong>: what each run changed in the cloud and on the
+          computer, file by file, and the conflict copies left when a file changed on both sides.
+        </li>
+        <li data-i18n="home.what3">
+          <strong>Bar widget and notifications</strong>: a cloud on the Omarchy bar with the same
+          state, and a desktop notification when a run fails and when it works again.
+        </li>
+        <li data-i18n="home.what4">
+          <strong>Controls</strong>: sync now, pause and resume, from the keyboard.
+        </li>
+        <li data-i18n="home.what5">
+          <strong>Safety</strong>: it fixes a broken sync only after you confirm a dry run, and
+          when too many files would be deleted it stops and shows you the list first.
+        </li>
+      </ul>
+
+      <section class="box" id="google">
+        <h2 data-i18n="home.googleTitle">Your Google account</h2>
+        <p data-i18n="home.google1">
+          To keep the folder and your Google Drive in sync, DriveSync asks Google for access to
+          your whole Drive: it lists, downloads, uploads, changes and deletes files so that both
+          copies stay the same. Your files travel only between your computer and Google. The
+          developer runs no server and receives none of your data, and the app has no analytics.
+        </p>
+        <p data-i18n="home.google2">
+          Read the <a href="privacy.html">privacy policy</a> for the details, and how to remove
+          the access at any time.
+        </p>
+      </section>
+
+      <h2 data-i18n="home.installTitle">Install</h2>
+      <p data-i18n="home.install1">
+        DriveSync runs on Omarchy (Arch Linux and Hyprland) and is built from its source:
+      </p>
+      <pre><code>git clone https://github.com/CaTeIM/drivesync.git
+cd drivesync
+bin/install</code></pre>
+      <p data-i18n="home.install2">
+        It builds the app, packages it and installs it with pacman. DriveSync then shows up in
+        the Omarchy launcher. The source, the license (MIT) and the full manual are on
+        <a href="https://github.com/CaTeIM/drivesync">GitHub</a>.
+      </p>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <p data-i18n="foot.text">
+          DriveSync is free software under the MIT license, made by
+          <a href="https://github.com/CaTeIM">Gustavo Cateim</a>.
+          <a href="privacy.html">Privacy policy</a>. <a href="terms.html">Terms of service</a>.
+          Not affiliated with Google. Google Drive is a trademark of Google LLC.
+        </p>
+      </div>
+    </footer>
+    <script src="i18n.js"></script>
+  </body>
+</html>

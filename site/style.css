@@ -1,0 +1,181 @@
+/* DriveSync's project page. The colors are the app icon's: the dark Omarchy
+   tile, the cream cloud and the green check. Dark first, like the app, with a
+   light version for visitors whose system asks for one. */
+:root {
+  --bg: #101010;
+  --surface: #181818;
+  --surface-2: #202020;
+  --line: #2c2c2c;
+  --text: #f5f1e8;
+  --muted: #a8a49b;
+  --accent: #82fb9c;
+  --accent-ink: #101010;
+  --link: #82fb9c;
+  --code: #0a0a0a;
+  --radius: 12px;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f7f5f0;
+    --surface: #ffffff;
+    --surface-2: #efece4;
+    --line: #dedad0;
+    --text: #1a1a1a;
+    --muted: #5e5a52;
+    --accent: #1f9d46;
+    --accent-ink: #ffffff;
+    --link: #17803a;
+    --code: #efece4;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a {
+  color: var(--link);
+}
+code {
+  font: 0.9em ui-monospace, "JetBrains Mono", "Cascadia Code", Menlo, monospace;
+  background: var(--surface-2);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+pre {
+  background: var(--code);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+pre code {
+  background: none;
+  padding: 0;
+}
+.wrap {
+  width: min(880px, 100% - 32px);
+  margin: 0 auto;
+}
+
+/* ---- Top bar ---- */
+nav {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+nav .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 60px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: none;
+}
+.links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.links a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.links a:hover {
+  color: var(--text);
+}
+.lang {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.lang button {
+  font: inherit;
+  font-size: 13px;
+  padding: 3px 9px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.lang button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* ---- Content ---- */
+header.hero {
+  padding: 48px 0 24px;
+}
+h1 {
+  font-size: clamp(28px, 5vw, 40px);
+  line-height: 1.2;
+  margin: 0 0 12px;
+}
+h2 {
+  font-size: 22px;
+  margin: 40px 0 8px;
+}
+.sub {
+  color: var(--muted);
+  font-size: 18px;
+  margin: 0;
+}
+.shot {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 24px 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.features {
+  padding-left: 20px;
+}
+.features li {
+  margin: 6px 0;
+}
+.box {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 4px 20px 12px;
+  margin: 24px 0;
+}
+.box h2 {
+  margin-top: 20px;
+}
+.updated {
+  color: var(--muted);
+}
+main {
+  padding-bottom: 48px;
+}
+
+/* ---- Footer ---- */
+footer {
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+  padding: 20px 0 32px;
+}
+
+@media (max-width: 560px) {
+  .hide-sm {
+    display: none;
+  }
+}

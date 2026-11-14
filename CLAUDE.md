@@ -96,9 +96,11 @@ src/i18n/*.json         en (plural forms only) and pt-BR
 tests/                  Qt Test suite
 tools/harness/          offscreen harness: the real Main.qml over a made-up drive-sync, saved as a PNG
 plugin/                 Omarchy bar widget (id drive-sync), installed to /usr/share/drive-sync/omarchy-plugin; reads `drive-sync status --json`
+site/                   project page on GitHub Pages (cateim.github.io/drivesync): index.html, privacy.html, terms.html, style.css, i18n.js (pt-BR and the EN/PT switch)
+.github/workflows/pages.yml  publishes site/, copying the icon and window-runs.png in from assets/
 docs/superpowers/       git-ignored, local only: design (specs/) and step plans (plans/)
 pkgbuild/               PKGBUILD, .desktop, units/ (drive-sync, drive-sync-watchdog and drive-sync-fix user units, /usr/lib/systemd/user)
-assets/icons/           launcher icon, installed by the PKGBUILD
+assets/icons/           launcher icon, installed by the PKGBUILD; drive-sync-logo.svg is the Google Cloud consent screen logo (no tile, outlined; 120 px PNG via rsvg-convert, not packaged)
 assets/images/          README pictures: window-*.png from bin/harness over a made-up log; bar-*.png are real screens with no file names
 ```
 
@@ -354,3 +356,22 @@ place, so it shows up in the Omarchy launcher. The DIY repository records it in
 `docs/omarchy.md` (packages built from a local repository). Bump `pkgver` in
 `pkgbuild/PKGBUILD` and `app.setApplicationVersion` in `src/main.cpp`
 together, after closing the changelog.
+
+The project page publishes itself: a push to `master` that touches `site/`,
+`assets/icons/`, `assets/images/` or the workflow runs `pages.yml` (the repo's
+Pages source is "GitHub Actions"). To preview it locally, copy the icon to
+`site/favicon.svg` and `window-runs.png` to `site/images/` (both git-ignored)
+and open the HTML file; delete the copies afterwards, since `site/` syncs to Drive.
+
+- **`site/privacy.html` and `site/terms.html` are what Google's sign-in
+  screen links to.** The Branding of the DriveSync Google Cloud project
+  points at `https://cateim.github.io/drivesync/`, `.../privacy.html` and
+  `.../terms.html`, with `cateim.github.io` as the authorized domain
+  (verified in Search Console through the `cateim.github.io` user-site
+  repository). A change in what the app reads, stores or sends changes the
+  privacy page, its date and its pt-BR text in `site/i18n.js` in the same
+  commit. Renaming either page or the repository moves the URL with no
+  redirect, so it means updating the Branding links the same day.
+- Every element with `data-i18n` (or `-content`, `-alt`) needs its pt-BR
+  line in `site/i18n.js`; a missing one stays English and warns in the
+  console.

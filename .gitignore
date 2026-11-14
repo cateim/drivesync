@@ -20,6 +20,10 @@
 graphify-out/
 docs/
 .superpowers/
+# The project page's icon and pictures: .github/workflows/pages.yml copies
+# them from assets/ at publish time, and a local preview does the same.
+/site/favicon.svg
+/site/images/
 
 # ---- Controle de trabalho ----
 # Rascunho de trabalho, nao documentacao: muda a cada sessao e cita o que

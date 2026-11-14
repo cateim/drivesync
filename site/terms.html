@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="terms.title">DriveSync terms of service</title>
+    <meta
+      name="description"
+      data-i18n-content="terms.description"
+      content="The terms for using DriveSync, a free desktop app that keeps a folder and your Google Drive in sync."
+    />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <nav>
+      <div class="wrap">
+        <a class="brand" href="./">
+          <img src="favicon.svg" alt="" width="30" height="30" />
+          <span>DriveSync</span>
+        </a>
+        <div class="links">
+          <a href="./" data-i18n="nav.home">Home</a>
+          <a href="https://github.com/CaTeIM/drivesync" class="hide-sm">GitHub</a>
+          <div class="lang" role="group" aria-label="Language / Idioma">
+            <button type="button" data-lang="en" lang="en" aria-pressed="true">EN</button>
+            <button type="button" data-lang="pt-BR" lang="pt-BR" aria-pressed="false">PT</button>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- The Google sign-in screen links to this page too, so its URL stays
+         put; see the gotcha in CLAUDE.md. -->
+    <main class="wrap">
+      <header class="hero">
+        <h1 data-i18n="terms.h1">Terms of service</h1>
+        <p class="updated" data-i18n="terms.updated">Last updated: 14 November 2026</p>
+      </header>
+
+      <p data-i18n="terms.intro">
+        These terms cover the use of DriveSync, the desktop app, and of this site. By using
+        DriveSync you agree to them.
+      </p>
+
+      <h2 data-i18n="terms.softwareTitle">The software</h2>
+      <p data-i18n="terms.software1">
+        DriveSync is free and open source software under the
+        <a href="https://github.com/CaTeIM/drivesync/blob/master/LICENSE">MIT license</a>, which
+        is what governs copying, changing and sharing it. It costs nothing, needs no account with
+        the developer, and runs entirely on your computer.
+      </p>
+
+      <h2 data-i18n="terms.googleTitle">Your Google account</h2>
+      <p data-i18n="terms.google1">
+        DriveSync works on your Google Drive with the access you give it when you sign in, and
+        only on your behalf. Your use of Google Drive stays under
+        <a href="https://policies.google.com/terms">Google's Terms of Service</a>, and you are
+        responsible for what you store and sync there. You can remove DriveSync's access at any
+        time, as the <a href="privacy.html">privacy policy</a> explains.
+      </p>
+
+      <h2 data-i18n="terms.syncTitle">What a two-way sync means</h2>
+      <p data-i18n="terms.sync1">
+        DriveSync copies changes in both directions: a file you change or delete on one side is
+        changed or deleted on the other. It stops and asks before a run that would delete too
+        many files, and it keeps a conflict copy when a file changed on both sides, but it cannot
+        protect against every mistake or failure. Keep a separate backup of any file you cannot
+        afford to lose.
+      </p>
+
+      <h2 data-i18n="terms.warrantyTitle">No warranty</h2>
+      <p data-i18n="terms.warranty1">
+        DriveSync is provided "as is", without warranty of any kind. As far as the law allows,
+        the developer is not liable for any loss of data or other damage that comes from using
+        it, as the MIT license says.
+      </p>
+
+      <h2 data-i18n="terms.changesTitle">Changes and contact</h2>
+      <p data-i18n="terms.changes1">
+        A change to these terms is published on this page with a new date, and its history is in
+        the <a href="https://github.com/CaTeIM/drivesync">source repository</a>. Questions go to
+        the project's <a href="https://github.com/CaTeIM/drivesync/issues">issue tracker</a>.
+      </p>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <p data-i18n="foot.text">
+          DriveSync is free software under the MIT license, made by
+          <a href="https://github.com/CaTeIM">Gustavo Cateim</a>.
+          <a href="privacy.html">Privacy policy</a>. <a href="terms.html">Terms of service</a>.
+          Not affiliated with Google. Google Drive is a trademark of Google LLC.
+        </p>
+      </div>
+    </footer>
+    <script src="i18n.js"></script>
+  </body>
+</html>

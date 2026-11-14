@@ -1,0 +1,43 @@
+name: Publish the project page
+on:
+  push:
+    branches: [master]
+    paths:
+      - "site/**"
+      - "assets/icons/**"
+      - "assets/images/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The icon and the window pictures have one copy each, the README's, in
+      # assets/. They join the page here, so nothing under site/ duplicates
+      # them (site/favicon.svg and site/images/ are git-ignored).
+      - name: Copy the icon and the pictures into the page
+        run: |
+          cp assets/icons/drive-sync.svg site/favicon.svg
+          mkdir -p site/images
+          cp assets/images/window-runs.png site/images/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="privacy.title">DriveSync privacy policy</title>
+    <meta
+      name="description"
+      data-i18n-content="privacy.description"
+      content="How DriveSync accesses, uses, stores and shares Google user data: it runs on your computer, and the developer receives none of your data."
+    />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <nav>
+      <div class="wrap">
+        <a class="brand" href="./">
+          <img src="favicon.svg" alt="" width="30" height="30" />
+          <span>DriveSync</span>
+        </a>
+        <div class="links">
+          <a href="./" data-i18n="nav.home">Home</a>
+          <a href="https://github.com/CaTeIM/drivesync" class="hide-sm">GitHub</a>
+          <div class="lang" role="group" aria-label="Language / Idioma">
+            <button type="button" data-lang="en" lang="en" aria-pressed="true">EN</button>
+            <button type="button" data-lang="pt-BR" lang="pt-BR" aria-pressed="false">PT</button>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- This is the page the Google sign-in screen links to. It must keep
+         describing what the app really does: a change in what DriveSync reads,
+         stores or sends changes this page, and its date, in the same commit. -->
+    <main class="wrap">
+      <header class="hero">
+        <h1 data-i18n="privacy.h1">Privacy policy</h1>
+        <p class="updated" data-i18n="privacy.updated">Last updated: 14 November 2026</p>
+      </header>
+
+      <p data-i18n="privacy.intro">
+        DriveSync is a desktop app that runs on your own computer. It keeps a folder on that
+        computer and your Google Drive in sync, using
+        <a href="https://rclone.org/">rclone</a>. The developer runs no server, collects nothing
+        and receives none of your data. This page explains what DriveSync does with the access you
+        give it to your Google account.
+      </p>
+
+      <h2 data-i18n="privacy.accessTitle">What DriveSync accesses</h2>
+      <p data-i18n="privacy.access1">
+        When you sign in, Google asks you to let DriveSync see, edit, create and delete all of
+        your Google Drive files (the <code>https://www.googleapis.com/auth/drive</code> scope).
+        DriveSync needs the whole Drive because it mirrors it into a folder on your computer in
+        both directions. It reads the names, sizes, dates and contents of your Drive files. It
+        asks for nothing else from your Google account.
+      </p>
+
+      <h2 data-i18n="privacy.useTitle">How DriveSync uses it</h2>
+      <p data-i18n="privacy.use1">
+        Only to keep the two copies the same, and to show you how that is going. On each run it
+        lists the files on both sides, copies new and changed files each way, and deletes on one
+        side the files you deleted on the other (files deleted from the folder go to the Drive
+        trash). File names appear in the DriveSync window, in desktop notifications and in a log
+        on your computer, so you can see what each run did. It does nothing else with your data:
+        no advertising, no profiling, and no training of AI or machine learning models.
+      </p>
+
+      <h2 data-i18n="privacy.storeTitle">Where your data is kept</h2>
+      <ul class="features">
+        <li data-i18n="privacy.store1">
+          Your files: in the folder you chose (<code>~/Drive</code> by default) and in your Google
+          Drive. They travel only between your computer and Google's servers, over HTTPS.
+        </li>
+        <li data-i18n="privacy.store2">
+          The sign-in token Google gives back: in rclone's configuration file on your computer
+          (by default <code>~/.config/rclone/rclone.conf</code>).
+        </li>
+        <li data-i18n="privacy.store3">
+          The sync log, with file names: <code>~/.local/state/drive-sync.log</code>. DriveSync's
+          settings and state: <code>~/.config/drive-sync/</code> and
+          <code>~/.local/state/drive-sync-app/</code>.
+        </li>
+      </ul>
+      <p data-i18n="privacy.store4">
+        All of this stays on your computer until you delete it. The developer has no copy of any of
+        it, so there is nothing to keep or delete on the developer's side.
+      </p>
+
+      <h2 data-i18n="privacy.shareTitle">Sharing</h2>
+      <p data-i18n="privacy.share1">
+        DriveSync does not send your data, your file names or anything about your use of the app
+        to the developer or to anyone else. It has no analytics, telemetry or crash reporting, and
+        it does not sell or share data. The only party it talks to is Google, to read and write
+        your own Drive, and Google's own
+        <a href="https://policies.google.com/privacy">privacy policy</a> covers that.
+      </p>
+
+      <h2 data-i18n="privacy.limitedTitle">Google API Services User Data Policy</h2>
+      <p data-i18n="privacy.limited1">
+        DriveSync's use and transfer to any other app of information received from Google APIs
+        will adhere to the
+        <a href="https://developers.google.com/terms/api-services-user-data-policy"
+          >Google API Services User Data Policy</a
+        >, including the Limited Use requirements.
+      </p>
+
+      <h2 data-i18n="privacy.controlTitle">Removing the access</h2>
+      <ul class="features">
+        <li data-i18n="privacy.control1">
+          Revoke DriveSync's access at any time on your Google account's
+          <a href="https://myaccount.google.com/connections">third-party connections</a> page.
+          Syncing stops at the next run.
+        </li>
+        <li data-i18n="privacy.control2">
+          Remove the token from your computer with <code>rclone config delete</code> followed by
+          the name of the Drive remote.
+        </li>
+        <li data-i18n="privacy.control3">
+          Uninstall the app with <code>sudo pacman -R drive-sync</code>, and delete the folders
+          listed above if you want them gone too. Your files stay in the folder and in your Drive.
+        </li>
+      </ul>
+
+      <h2 data-i18n="privacy.changesTitle">Changes and contact</h2>
+      <p data-i18n="privacy.changes1">
+        A change to this policy is published on this page with a new date, and its history is in
+        the <a href="https://github.com/CaTeIM/drivesync">source repository</a>. Questions go to
+        the project's <a href="https://github.com/CaTeIM/drivesync/issues">issue tracker</a>.
+      </p>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <p data-i18n="foot.text">
+          DriveSync is free software under the MIT license, made by
+          <a href="https://github.com/CaTeIM">Gustavo Cateim</a>.
+          <a href="privacy.html">Privacy policy</a>. <a href="terms.html">Terms of service</a>.
+          Not affiliated with Google. Google Drive is a trademark of Google LLC.
+        </p>
+      </div>
+    </footer>
+    <script src="i18n.js"></script>
+  </body>
+</html>
